@@ -22,7 +22,7 @@ model User {
   createdBy   String   @default("system")
 
   // Relations
-  assignedTasks    Task[]           @relation("AssignedTo")
+  assignedTasks    Task[]           @relation("TaskAssignees")
   createdTasks     Task[]           @relation("AssignedBy")
   accountRequests  AccountRequest[] @relation("RequestedBy")
   resolvedRequests AccountRequest[] @relation("ResolvedBy")
@@ -32,7 +32,6 @@ model Task {
   id          String   @id @default(cuid())
   title       String
   description String   @default("")
-  assignedToId String
   assignedById String
   status      String   @default("pending")   // pending | in-progress | review | done
   priority    String   @default("medium")    // low | medium | high | critical
@@ -41,8 +40,8 @@ model Task {
   updatedAt   String
   notes       String   @default("[]")        // JSON array stored as string
 
-  assignedTo  User @relation("AssignedTo", fields: [assignedToId], references: [id], onDelete: Cascade)
-  assignedBy  User @relation("AssignedBy", fields: [assignedById], references: [id], onDelete: Cascade)
+  assignees   User[]   @relation("TaskAssignees")
+  assignedBy  User     @relation("AssignedBy", fields: [assignedById], references: [id], onDelete: Cascade)
 }
 
 model AccountRequest {

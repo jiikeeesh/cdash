@@ -8,7 +8,7 @@ type TaskPriority = 'low' | 'medium' | 'high' | 'critical';
 
 interface Task {
   id: string; title: string; description: string;
-  assignedToId: string; assignedById: string;
+  assigneeIds: string[]; assignedById: string;
   status: TaskStatus; priority: TaskPriority;
   dueDate: string; createdAt: string; updatedAt: string; notes: string[];
 }
@@ -30,28 +30,37 @@ function useToast() {
 }
 
 // ── Task Form Modal ────────────────────────────────────────────────────────
-function TaskModal({ task, users, currentUserId, canAssign, onClose, onSave }: {
+function TaskModal({ task, users, currentUserId, canAssign, isClone, onClose, onSave }: {
   task: Task | null; users: SafeUser[]; currentUserId: string;
-  canAssign: boolean; onClose: () => void;
+  canAssign: boolean; isClone?: boolean; onClose: () => void;
   onSave: (data: Record<string, string>) => void;
 }) {
   const defaultDue = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
   const [form, setForm] = useState({
     title: task?.title ?? '',
     description: task?.description ?? '',
-    assignedToId: task?.assignedToId ?? '',
+    assigneeIds: isClone ? [] : (task?.assigneeIds ?? []),
     priority: task?.priority ?? 'medium',
-    status: task?.status ?? 'pending',
+    status: isClone ? 'pending' : (task?.status ?? 'pending'),
     dueDate: task ? task.dueDate.slice(0, 10) : defaultDue,
   });
-  const setF = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
-  const assignable = users.filter((u) => u.role === 'user');
+  const setF = (k: string, v: any) => setForm((p) => ({ ...p, [k]: v }));
+  
+  // Assignable: Admins can assign anyone. Moderators can assign users and moderators.
+  const assignable = users.filter((u) => u.role === 'user' || u.role === 'moderator' || (currentUserId === u.id));
+
+  const toggleAssignee = (id: string) => {
+    setForm(p => ({
+      ...p,
+      assigneeIds: p.assigneeIds.includes(id) ? p.assigneeIds.filter(x => x !== id) : [...p.assigneeIds, id]
+    }));
+  };
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3 className="modal-title">{task ? 'Edit Task' : 'Create Task'}</h3>
+          <h3 className="modal-title">{isClone ? 'Delegate Task' : task ? 'Edit Task' : 'Create Task'}</h3>
           <button className="btn-close" onClick={onClose}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </div>
         <div className="modal-body">
@@ -59,12 +68,18 @@ function TaskModal({ task, users, currentUserId, canAssign, onClose, onSave }: {
             <input className="input" value={form.title} onChange={(e) => setF('title', e.target.value)} placeholder="Enter task title" /></div>
           <div className="field"><label className="label">Description</label>
             <textarea className="textarea" value={form.description} onChange={(e) => setF('description', e.target.value)} rows={3} placeholder="Describe the task…" /></div>
+          <div className="field">
+            <label className="label">Assign To *</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', maxHeight: '120px', overflowY: 'auto', padding: '10px', border: '1px solid var(--neutral-200)', borderRadius: 'var(--radius-md)' }}>
+              {assignable.map((u) => (
+                <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 14, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={form.assigneeIds.includes(u.id)} onChange={() => toggleAssignee(u.id)} disabled={!canAssign} />
+                  <span>{u.fullName}</span> <span className={`badge badge-${u.role}`} style={{ fontSize: 10, padding: '2px 4px' }}>{u.role}</span>
+                </label>
+              ))}
+            </div>
+          </div>
           <div className="field-row">
-            <div className="field"><label className="label">Assign To *</label>
-              <select className="select" value={form.assignedToId} onChange={(e) => setF('assignedToId', e.target.value)} disabled={!canAssign}>
-                <option value="">Select user…</option>
-                {assignable.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
-              </select></div>
             <div className="field"><label className="label">Due Date *</label>
               <input className="input" type="date" value={form.dueDate} onChange={(e) => setF('dueDate', e.target.value)} /></div>
           </div>
@@ -80,9 +95,9 @@ function TaskModal({ task, users, currentUserId, canAssign, onClose, onSave }: {
         <div className="modal-footer">
           <button className="btn btn-outline" onClick={onClose}>Cancel</button>
           <button className="btn btn-brand" onClick={() => {
-            if (!form.title.trim() || !form.assignedToId || !form.dueDate) return;
+            if (!form.title.trim() || form.assigneeIds.length === 0 || !form.dueDate) return;
             onSave(form);
-          }}>{task ? 'Save Changes' : 'Create Task'}</button>
+          }}>{isClone ? 'Assign New Task' : task ? 'Save Changes' : 'Create Task'}</button>
         </div>
       </div>
     </div>
@@ -121,9 +136,12 @@ function UpdateStatusModal({ task, onClose, onSave }: {
 }
 
 // ── Task Detail Modal ──────────────────────────────────────────────────────
-function TaskDetailModal({ task, users, onClose }: { task: Task; users: SafeUser[]; onClose: () => void }) {
+function TaskDetailModal({ task, users, onClose, onUpdate }: { task: Task; users: SafeUser[]; onClose: () => void; onUpdate: (status: TaskStatus, note: string) => void }) {
   const assignee = users.find((u) => u.id === task.assignedToId);
   const assigner = users.find((u) => u.id === task.assignedById);
+  const [status, setStatus] = useState<TaskStatus>(task.status);
+  const [note, setNote] = useState('');
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
@@ -139,7 +157,7 @@ function TaskDetailModal({ task, users, onClose }: { task: Task; users: SafeUser
           {task.description && <p style={{ fontSize: 14, color: 'var(--neutral-600)', marginBottom: 20, lineHeight: 1.7 }}>{task.description}</p>}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
             {[
-              ['Assigned To', assignee?.fullName ?? '—'],
+              ['Assigned To', task.assigneeIds.length > 0 ? task.assigneeIds.map(id => users.find(u => u.id === id)?.fullName || '—').join(', ') : '—'],
               ['Assigned By', assigner?.fullName ?? '—'],
               ['Due Date', new Date(task.dueDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })],
               ['Created', new Date(task.createdAt).toLocaleDateString()],
@@ -152,11 +170,27 @@ function TaskDetailModal({ task, users, onClose }: { task: Task; users: SafeUser
           </div>
           {task.notes.length > 0 && (<>
             <div className="divider" />
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--neutral-700)', marginBottom: 10 }}>Progress Notes</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--neutral-700)', marginBottom: 10 }}>Comments & Notes</div>
             {task.notes.map((n, i) => (
               <div key={i} style={{ background: 'var(--neutral-50)', border: '1px solid var(--neutral-200)', borderRadius: 'var(--radius-md)', padding: '10px 14px', marginBottom: 8, fontSize: 13, color: 'var(--neutral-700)' }}>{n}</div>
             ))}
           </>)}
+
+          <div className="divider" />
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--neutral-700)', marginBottom: 10 }}>Update Progress</div>
+          <div className="field-row">
+            <div className="field"><label className="label">Change Status</label>
+              <select className="select" value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)}>
+                {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s.replace('-', ' ')}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="field"><label className="label">Add a Comment</label>
+            <textarea className="textarea" value={note} onChange={(e) => setNote(e.target.value)} rows={3} placeholder="Add your comment or update note here…" />
+          </div>
+          <button className="btn btn-brand" style={{ width: '100%', marginTop: 8 }} onClick={() => onUpdate(status, note)} disabled={status === task.status && !note.trim()}>
+            Post Comment / Update Status
+          </button>
         </div>
         <div className="modal-footer"><button className="btn btn-outline" onClick={onClose}>Close</button></div>
       </div>
@@ -175,20 +209,23 @@ export default function TasksPage() {
   const [filterPriority, setFilterPriority] = useState<TaskPriority | 'all'>('all');
   const [view, setView]     = useState<'list' | 'grid'>('list');
   const [modalState, setModalState] = useState<
-    | { type: 'create' } | { type: 'edit'; task: Task }
+    | { type: 'create' } | { type: 'edit'; task: Task } | { type: 'clone'; task: Task }
     | { type: 'detail'; task: Task } | { type: 'status'; task: Task } | null
   >(null);
 
   const loadTasks = useCallback(() => {
     if (!currentUser) return;
-    const url = currentUser.role === 'user' ? `/api/tasks?userId=${currentUser.id}` : '/api/tasks';
+    const url = currentUser.role !== 'admin' ? `/api/tasks?userId=${currentUser.id}` : '/api/tasks';
     fetch(url).then((r) => r.json()).then(setTasks).catch(() => {});
   }, [currentUser]);
 
   useEffect(() => {
     if (!currentUser) return;
     loadTasks();
-    fetch('/api/users').then((r) => r.json()).then(setUsers).catch(() => {});
+    fetch('/api/users').then((r) => r.json()).then(data => {
+      if (currentUser.role === 'admin') setUsers(data);
+      else setUsers(data.filter((u: SafeUser) => u.role !== 'user' || u.id === currentUser.id || u.createdBy?.includes(currentUser.id)));
+    }).catch(() => {});
   }, [currentUser, loadTasks]);
 
   if (!currentUser) return null;
@@ -205,12 +242,12 @@ export default function TasksPage() {
 
   const getUserName = (id: string) => users.find((u) => u.id === id)?.fullName ?? '—';
 
-  async function handleSave(form: Record<string, string> & { id?: string }) {
-    const isEdit = !!(modalState as any)?.task;
-    const taskId = (modalState as any)?.task?.id;
+  async function handleSave(form: any) {
+    const isEdit = modalState?.type === 'edit';
+    const taskId = isEdit ? (modalState as any).task.id : undefined;
     const body = {
       title: form.title, description: form.description,
-      assignedToId: form.assignedToId, priority: form.priority,
+      assigneeIds: form.assigneeIds, priority: form.priority,
       status: form.status, dueDate: new Date(form.dueDate).toISOString(),
       ...(!isEdit && { assignedById: currentUser.id }),
     };
@@ -223,7 +260,7 @@ export default function TasksPage() {
 
   async function handleStatusUpdate(task: Task, status: TaskStatus, note: string) {
     const notes = note.trim()
-      ? [...task.notes, `[${new Date().toLocaleDateString()}] ${note.trim()}`]
+      ? [...task.notes, `[${new Date().toLocaleDateString()} - ${currentUser?.fullName || 'User'}] ${note.trim()}`]
       : task.notes;
     const res = await fetch(`/api/tasks/${task.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -298,9 +335,14 @@ export default function TasksPage() {
               </div>
               <div className="task-card-desc">{task.description || 'No description.'}</div>
               <div className="task-card-meta">
-                <div className="task-card-assignee">
-                  <div className="mini-avatar">{getUserName(task.assignedToId).slice(0, 2).toUpperCase()}</div>
-                  <span>{getUserName(task.assignedToId)}</span>
+                <div className="task-card-assignee" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+                  {task.assigneeIds.slice(0, 2).map(id => (
+                    <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div className="mini-avatar">{getUserName(id).slice(0, 2).toUpperCase()}</div>
+                      <span style={{ fontSize: 11 }}>{getUserName(id)}</span>
+                    </div>
+                  ))}
+                  {task.assigneeIds.length > 2 && <span style={{ fontSize: 10, color: 'var(--neutral-400)' }}>+{task.assigneeIds.length - 2} more</span>}
                 </div>
                 <span>Due {new Date(task.dueDate).toLocaleDateString()}</span>
               </div>
@@ -323,7 +365,10 @@ export default function TasksPage() {
                       <div style={{ fontWeight: 600, color: 'var(--neutral-900)' }}>{task.title}</div>
                       {task.description && <div style={{ fontSize: 12, color: 'var(--neutral-400)', marginTop: 2, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.description}</div>}
                     </td>
-                    <td>{getUserName(task.assignedToId)}</td>
+                    <td>
+                      {task.assigneeIds.slice(0, 2).map(id => getUserName(id)).join(', ')}
+                      {task.assigneeIds.length > 2 && <span style={{ color: 'var(--neutral-400)' }}> (+{task.assigneeIds.length - 2})</span>}
+                    </td>
                     {canAssign && <td>{getUserName(task.assignedById)}</td>}
                     <td><span className={`badge badge-${task.priority}`}>{task.priority}</span></td>
                     <td><span className={`badge badge-${task.status}`}>{task.status.replace('-', ' ')}</span></td>
@@ -336,6 +381,11 @@ export default function TasksPage() {
                         {!canAssign && (
                           <button className="btn btn-outline btn-sm" onClick={() => setModalState({ type: 'status', task })} title="Update status">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                          </button>
+                        )}
+                        {canAssign && (
+                          <button className="btn btn-outline btn-sm" onClick={() => setModalState({ type: 'clone', task })} title="Delegate Task">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M12 11v6"/><path d="M9 14l3 3 3-3"/></svg>
                           </button>
                         )}
                         {canAssign && (
@@ -359,12 +409,12 @@ export default function TasksPage() {
       )}
 
       {/* Modals */}
-      {(modalState?.type === 'create' || modalState?.type === 'edit') && (
-        <TaskModal task={modalState.type === 'edit' ? modalState.task : null} users={users}
-          currentUserId={currentUser.id} canAssign={canAssign}
+      {(modalState?.type === 'create' || modalState?.type === 'edit' || modalState?.type === 'clone') && (
+        <TaskModal task={(modalState.type === 'edit' || modalState.type === 'clone') ? modalState.task : null} users={users}
+          currentUserId={currentUser.id} canAssign={canAssign} isClone={modalState.type === 'clone'}
           onClose={() => setModalState(null)} onSave={handleSave} />
       )}
-      {modalState?.type === 'detail' && <TaskDetailModal task={modalState.task} users={users} onClose={() => setModalState(null)} />}
+      {modalState?.type === 'detail' && <TaskDetailModal task={modalState.task} users={users} onClose={() => setModalState(null)} onUpdate={(status, note) => handleStatusUpdate(modalState.task, status, note)} />}
       {modalState?.type === 'status' && (
         <UpdateStatusModal task={modalState.task} onClose={() => setModalState(null)}
           onSave={(status, note) => handleStatusUpdate(modalState.task, status, note)} />

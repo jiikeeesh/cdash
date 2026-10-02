@@ -10,19 +10,29 @@ export async function PATCH(
   try {
     const { id } = await params;
     const data = await req.json();
-    const { title, description, assignedToId, priority, status, dueDate, notes } = data;
+    const { title, description, assigneeIds, priority, status, dueDate, notes } = data;
 
-    const updateData: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+    const updateData: any = { updatedAt: new Date().toISOString() };
     if (title !== undefined)        updateData.title        = title;
     if (description !== undefined)  updateData.description  = description;
-    if (assignedToId !== undefined) updateData.assignedToId = assignedToId;
     if (priority !== undefined)     updateData.priority     = priority;
     if (status !== undefined)       updateData.status       = status;
     if (dueDate !== undefined)      updateData.dueDate      = dueDate;
     if (notes !== undefined)        updateData.notes        = JSON.stringify(notes);
+    if (assigneeIds !== undefined && Array.isArray(assigneeIds)) {
+      updateData.assignees = { set: assigneeIds.map((aid: string) => ({ id: aid })) };
+    }
 
-    const task = await prisma.task.update({ where: { id }, data: updateData });
-    return NextResponse.json({ ...task, notes: JSON.parse(task.notes || '[]') });
+    const task = await prisma.task.update({ 
+      where: { id }, 
+      data: updateData,
+      include: { assignees: { select: { id: true, fullName: true } } }
+    });
+    return NextResponse.json({ 
+      ...task, 
+      notes: JSON.parse(task.notes || '[]'),
+      assigneeIds: task.assignees.map(a => a.id)
+    });
   } catch (e: any) {
     if (e?.code === 'P2025') return NextResponse.json({ error: 'Task not found' }, { status: 404 });
     return NextResponse.json({ error: 'Server error' }, { status: 500 });

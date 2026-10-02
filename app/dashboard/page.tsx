@@ -47,8 +47,8 @@ export default function DashboardPage() {
       fetch('/api/users').then((r) => r.json()).then(setUsers).catch(() => {});
     }
 
-    // Fetch tasks — all for admin/moderator, own for user
-    const url = currentUser.role === 'user'
+    // Fetch tasks — all for admin, own/assigned for user and moderator
+    const url = currentUser.role !== 'admin'
       ? `/api/tasks?userId=${currentUser.id}`
       : '/api/tasks';
     fetch(url).then((r) => r.json()).then(setTasks).catch(() => {});

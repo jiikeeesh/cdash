@@ -29,7 +29,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Uniqueness check
-    const existing = await prisma.user.findUnique({ where: { username: username.toLowerCase() } });
+    const trimmedUsername = username.trim().toLowerCase();
+    const existing = await prisma.user.findUnique({ where: { username: trimmedUsername } });
     if (existing) {
       return NextResponse.json({ error: 'Username already exists' }, { status: 409 });
     }
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.create({
       data: {
-        username: username.toLowerCase(),
+        username: trimmedUsername,
         password,
         fullName,
         email,

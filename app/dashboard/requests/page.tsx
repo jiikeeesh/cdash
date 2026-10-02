@@ -134,7 +134,7 @@ export default function RequestsPage() {
     // 1. Create the user account
     const createRes = await fetch('/api/users', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password: tempPassword, fullName: req.fullName, email: req.email, department: req.department, role: 'user', createdBy: currentUser.id }),
+      body: JSON.stringify({ username, password: tempPassword, fullName: req.fullName, email: req.email, department: req.department, role: 'user', createdBy: req.requestedById }),
     });
     if (!createRes.ok) {
       const d = await createRes.json();

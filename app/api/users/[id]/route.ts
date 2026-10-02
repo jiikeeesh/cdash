@@ -32,7 +32,7 @@ export async function PATCH(
   try {
     const { id } = await params;
     const data = await req.json();
-    const { password, fullName, email, phone, address, department, role, isFirstLogin } = data;
+    const { password, fullName, email, phone, address, department, role, isFirstLogin, createdBy } = data;
 
     const updateData: Record<string, unknown> = {};
     if (fullName !== undefined)     updateData.fullName     = fullName;
@@ -41,6 +41,7 @@ export async function PATCH(
     if (address !== undefined)      updateData.address      = address;
     if (department !== undefined)   updateData.department   = department;
     if (role !== undefined)         updateData.role         = role;
+    if (createdBy !== undefined)    updateData.createdBy    = createdBy;
     if (password !== undefined && password !== '') updateData.password = password;
     if (isFirstLogin !== undefined) updateData.isFirstLogin = isFirstLogin;
 

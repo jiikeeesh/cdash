@@ -17,17 +17,18 @@ function useToast() {
 
 interface UserFormData {
   username: string; password: string; fullName: string;
-  email: string; phone: string; address: string; department: string; role: string;
+  email: string; phone: string; address: string; department: string; role: string; createdBy?: string;
 }
 const EMPTY_FORM: UserFormData = { username: '', password: '', fullName: '', email: '', phone: '', address: '', department: '', role: 'user' };
 
-function UserModal({ user, canCreateModerator, onClose, onSave }: {
+function UserModal({ user, canCreateModerator, onClose, onSave, users, currentUserId, isAdmin }: {
   user: SafeUser | null; canCreateModerator: boolean;
   onClose: () => void; onSave: (data: UserFormData) => void;
+  users: SafeUser[]; currentUserId: string; isAdmin: boolean;
 }) {
   const [form, setForm] = useState<UserFormData>(
-    user ? { username: user.username, password: '', fullName: user.fullName, email: user.email, phone: user.phone || '', address: user.address || '', department: user.department, role: user.role }
-         : { ...EMPTY_FORM }
+    user ? { username: user.username, password: '', fullName: user.fullName, email: user.email, phone: user.phone || '', address: user.address || '', department: user.department, role: user.role, createdBy: user.createdBy }
+         : { ...EMPTY_FORM, createdBy: currentUserId }
   );
   const [errors, setErrors] = useState<Partial<UserFormData>>({});
   const setF = (k: keyof UserFormData, v: string) => setForm((p) => ({ ...p, [k]: v }));
@@ -41,6 +42,15 @@ function UserModal({ user, canCreateModerator, onClose, onSave }: {
     setErrors(e);
     return Object.keys(e).length === 0;
   }
+
+  const assigneesArray = form.createdBy ? form.createdBy.split(',').filter(Boolean) : [];
+  const toggleModerator = (modId: string) => {
+    let newArr = [...assigneesArray];
+    if (newArr.includes(modId)) newArr = newArr.filter(id => id !== modId);
+    else newArr.push(modId);
+    if (newArr.length === 0) newArr.push(currentUserId);
+    setF('createdBy', newArr.join(','));
+  };
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -84,6 +94,23 @@ function UserModal({ user, canCreateModerator, onClose, onSave }: {
           <div className="field-row">
             <div className="field"><label className="label">Department</label>
               <input className="input" value={form.department} onChange={(e) => setF('department', e.target.value)} placeholder="Engineering" /></div>
+            {isAdmin && form.role === 'user' && (
+              <div className="field">
+                <label className="label">Assign to Moderator(s) (Managers)</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', maxHeight: '120px', overflowY: 'auto', padding: '10px', border: '1px solid var(--neutral-200)', borderRadius: 'var(--radius-md)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 14, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={assigneesArray.includes(currentUserId)} onChange={() => toggleModerator(currentUserId)} />
+                    <span>Self (Admin)</span>
+                  </label>
+                  {users.filter(u => u.role === 'moderator').map(m => (
+                    <label key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 14, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={assigneesArray.includes(m.id)} onChange={() => toggleModerator(m.id)} />
+                      <span>{m.fullName}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           {!user && (
             <div style={{ background: 'var(--info-light)', border: '1px solid rgba(59,130,246,.2)', borderRadius: 'var(--radius-md)', padding: '10px 14px', fontSize: 13, color: 'var(--info-dark)' }}>
@@ -125,7 +152,7 @@ export default function UsersPage() {
     const q = search.toLowerCase();
     const matchSearch = !q || u.fullName.toLowerCase().includes(q) || u.username.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
     const matchRole   = filterRole === 'all' || u.role === filterRole;
-    const matchAccess = isAdmin || u.role === 'user';
+    const matchAccess = isAdmin || (u.role === 'user' && (u.createdBy?.includes(currentUser.id) || u.id === currentUser.id));
     return matchSearch && matchRole && matchAccess;
   });
 
@@ -134,14 +161,14 @@ export default function UsersPage() {
     if (editUser) {
       const res = await fetch(`/api/users/${editUser.id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fullName: form.fullName, email: form.email, phone: form.phone, address: form.address, department: form.department, role: form.role, ...(form.password ? { password: form.password, isFirstLogin: true } : {}) }),
+        body: JSON.stringify({ fullName: form.fullName, email: form.email, phone: form.phone, address: form.address, department: form.department, role: form.role, createdBy: form.createdBy, ...(form.password ? { password: form.password, isFirstLogin: true } : {}) }),
       });
       if (res.ok) { push('success', 'Account updated'); loadUsers(); setModalState(null); }
       else { const d = await res.json(); push('error', d.error ?? 'Failed'); }
     } else {
       const res = await fetch('/api/users', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, createdBy: currentUser.id }),
+        body: JSON.stringify({ ...form }),
       });
       if (res.ok) { push('success', `Account created — ${form.fullName} must change password on first login`); loadUsers(); setModalState(null); }
       else { const d = await res.json(); push('error', d.error ?? 'Failed'); }
@@ -181,10 +208,12 @@ export default function UsersPage() {
           <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--neutral-900)' }}>{isAdmin ? 'User Management' : 'Users'}</h2>
           <p className="text-sm text-neutral" style={{ marginTop: 2 }}>{isAdmin ? `${users.length} accounts total` : `${users.filter((u) => u.role === 'user').length} users`}</p>
         </div>
-        <button id="create-user-btn" className="btn btn-brand" onClick={() => setModalState({ type: 'create' })}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="16" y1="11" x2="22" y2="11"/></svg>
-          Create Account
-        </button>
+        {isAdmin && (
+          <button id="create-user-btn" className="btn btn-brand" onClick={() => setModalState({ type: 'create' })}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="16" y1="11" x2="22" y2="11"/></svg>
+            Create Account
+          </button>
+        )}
       </div>
 
       {isAdmin && (
@@ -272,7 +301,7 @@ export default function UsersPage() {
 
       {modalState && (
         <UserModal user={modalState.type === 'edit' ? modalState.user : null}
-          canCreateModerator={isAdmin} onClose={() => setModalState(null)} onSave={handleSave} />
+          canCreateModerator={isAdmin} users={users} currentUserId={currentUser.id} isAdmin={isAdmin} onClose={() => setModalState(null)} onSave={handleSave} />
       )}
     </>
   );
