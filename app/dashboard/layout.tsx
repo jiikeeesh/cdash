@@ -154,7 +154,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     .toUpperCase()
     .slice(0, 2);
 
-  const visibleNav = navItems.filter((item) => item.roles.includes(currentUser.role));
+  const visibleNav = navItems.filter((item) => item.roles.includes(currentUser.role as Role));
 
   function handleLogout() {
     logout();
@@ -195,7 +195,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="sidebar-avatar">{initials}</div>
           <div className="sidebar-user-info">
             <div className="sidebar-user-name">{currentUser.fullName}</div>
-            <span className={roleBadgeClass(currentUser.role)}>{currentUser.role}</span>
+            <span className={roleBadgeClass(currentUser.role as Role)}>{currentUser.role}</span>
           </div>
         </div>
 

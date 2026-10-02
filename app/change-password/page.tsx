@@ -51,14 +51,11 @@ export default function ChangePasswordPage() {
       setError('Passwords do not match.');
       return;
     }
-    if (newPw === currentUser.password) {
-      setError('New password must be different from the current one.');
-      return;
-    }
+
 
     setLoading(true);
     
-    const res = await fetch(`/api/users/${currentUser.id}`, {
+    const res = await fetch(`/api/users/${currentUser!.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: newPw, isFirstLogin: false }),

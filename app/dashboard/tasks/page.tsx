@@ -33,7 +33,7 @@ function useToast() {
 function TaskModal({ task, users, currentUserId, canAssign, isClone, onClose, onSave }: {
   task: Task | null; users: SafeUser[]; currentUserId: string;
   canAssign: boolean; isClone?: boolean; onClose: () => void;
-  onSave: (data: Record<string, string>) => void;
+  onSave: (data: any) => void;
 }) {
   const defaultDue = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
   const [form, setForm] = useState({
@@ -137,7 +137,7 @@ function UpdateStatusModal({ task, onClose, onSave }: {
 
 // ── Task Detail Modal ──────────────────────────────────────────────────────
 function TaskDetailModal({ task, users, onClose, onUpdate }: { task: Task; users: SafeUser[]; onClose: () => void; onUpdate: (status: TaskStatus, note: string) => void }) {
-  const assignee = users.find((u) => u.id === task.assignedToId);
+  const assignee = users.find((u) => u.id === task.assigneeIds[0]);
   const assigner = users.find((u) => u.id === task.assignedById);
   const [status, setStatus] = useState<TaskStatus>(task.status);
   const [note, setNote] = useState('');
@@ -249,7 +249,7 @@ export default function TasksPage() {
       title: form.title, description: form.description,
       assigneeIds: form.assigneeIds, priority: form.priority,
       status: form.status, dueDate: new Date(form.dueDate).toISOString(),
-      ...(!isEdit && { assignedById: currentUser.id }),
+      ...(!isEdit && { assignedById: currentUser!.id }),
     };
     const res = isEdit
       ? await fetch(`/api/tasks/${taskId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })

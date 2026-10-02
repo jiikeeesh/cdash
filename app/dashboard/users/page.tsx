@@ -176,7 +176,7 @@ export default function UsersPage() {
   }
 
   async function handleDelete(user: SafeUser) {
-    if (user.id === currentUser.id) { push('error', 'Cannot delete your own account'); return; }
+    if (user.id === currentUser!.id) { push('error', 'Cannot delete your own account'); return; }
     if (!confirm(`Delete ${user.fullName}? This cannot be undone.`)) return;
     const res = await fetch(`/api/users/${user.id}`, { method: 'DELETE' });
     if (res.ok) { push('info', 'Account deleted'); loadUsers(); }

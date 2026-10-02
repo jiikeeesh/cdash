@@ -124,7 +124,7 @@ export default function RequestsPage() {
   async function handleSubmitRequest(data: { fullName: string; email: string; department: string; reason: string }) {
     const res = await fetch('/api/requests', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...data, requestedById: currentUser.id }),
+      body: JSON.stringify({ ...data, requestedById: currentUser!.id }),
     });
     if (res.ok) { push('success', 'Request submitted to Admin'); loadData(); setModalState(null); }
     else push('error', 'Failed to submit request');
@@ -144,7 +144,7 @@ export default function RequestsPage() {
     // 2. Mark request as approved
     await fetch(`/api/requests/${req.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'approved', resolvedById: currentUser.id }),
+      body: JSON.stringify({ status: 'approved', resolvedById: currentUser!.id }),
     });
     push('success', `Account created for ${req.fullName}`);
     loadData();
@@ -155,7 +155,7 @@ export default function RequestsPage() {
     if (!confirm(`Reject account request for ${req.fullName}?`)) return;
     await fetch(`/api/requests/${req.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'rejected', resolvedById: currentUser.id }),
+      body: JSON.stringify({ status: 'rejected', resolvedById: currentUser!.id }),
     });
     push('info', 'Request rejected');
     loadData();
