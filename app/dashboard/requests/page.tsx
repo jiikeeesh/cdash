@@ -219,7 +219,7 @@ export default function RequestsPage() {
           <div className="empty-state"><div className="empty-state-icon">📬</div><h3>No requests</h3><p>{currentUser.role === 'moderator' ? 'Click "New Request" to submit one.' : 'No account requests to review.'}</p></div>
         ) : (
           <div className="table-wrap">
-            <table>
+            <table style={{ display: 'block', overflowX: 'auto', whiteSpace: 'nowrap', width: '100%' }}>
               <thead><tr>
                 <th>Requested For</th>
                 {isAdmin && <th>Requested By</th>}
@@ -235,8 +235,8 @@ export default function RequestsPage() {
                     <td><div style={{ fontSize: 13, color: 'var(--neutral-600)', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{req.reason || '—'}</div></td>
                     <td><span className={`badge badge-${req.status}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>{statusIcon(req.status)}{req.status}</span></td>
                     <td style={{ fontSize: 12, color: 'var(--neutral-400)' }}>
-                      {new Date(req.createdAt).toLocaleDateString()}
-                      {req.resolvedAt && <div style={{ marginTop: 2 }}>Resolved: {new Date(req.resolvedAt).toLocaleDateString()}</div>}
+                      <div>{new Date(req.createdAt).toLocaleDateString()} {new Date(req.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                      {req.resolvedAt && <div style={{ marginTop: 2 }}>Resolved: {new Date(req.resolvedAt).toLocaleDateString()} {new Date(req.resolvedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>}
                     </td>
                     {isAdmin && (
                       <td>

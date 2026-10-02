@@ -247,7 +247,7 @@ export default function UsersPage() {
           {filtered.length === 0 ? (
             <div className="empty-state"><div className="empty-state-icon">👥</div><h3>No accounts found</h3><p>Click "Create Account" to add one.</p></div>
           ) : (
-            <table>
+            <table style={{ display: 'block', overflowX: 'auto', whiteSpace: 'nowrap', width: '100%' }}>
               <thead><tr><th>User</th><th>Contact Details</th><th>Username</th><th>Department</th><th>Role</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
               <tbody>
                 {filtered.map((u) => (
@@ -271,7 +271,10 @@ export default function UsersPage() {
                     <td style={{ fontSize: 13, color: 'var(--neutral-600)' }}>{u.department || '—'}</td>
                     <td><span className={`badge badge-${u.role}`}>{u.role}</span></td>
                     <td>{u.isFirstLogin ? <span className="badge badge-review">Pending Setup</span> : <span className="badge badge-done">Active</span>}</td>
-                    <td style={{ fontSize: 12, color: 'var(--neutral-400)' }}>{new Date(u.createdAt).toLocaleDateString()}</td>
+                    <td style={{ fontSize: 12, color: 'var(--neutral-400)' }}>
+                      <div>{new Date(u.createdAt).toLocaleDateString()}</div>
+                      <div>{new Date(u.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                    </td>
                     <td>
                       <div style={{ display: 'flex', gap: 6 }}>
                         {(isAdmin || (isModerator && u.role === 'user')) && (
