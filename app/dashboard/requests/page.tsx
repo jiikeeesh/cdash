@@ -90,6 +90,8 @@ function ApproveModal({ req, onClose, onApprove }: {
   );
 }
 
+import { ConfirmModal } from '../../components/ConfirmModal';
+
 export default function RequestsPage() {
   const { currentUser } = useAuth();
   const { toasts, push } = useToast();
@@ -97,6 +99,7 @@ export default function RequestsPage() {
   const [users, setUsers]       = useState<SafeUser[]>([]);
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [modalState, setModalState] = useState<'new' | { type: 'approve'; req: AccountRequest } | null>(null);
+  const [confirmState, setConfirmState] = useState<{ title: string; message: string; onConfirm: () => void; confirmText?: string; confirmStyle?: 'danger'|'brand'|'warning' } | null>(null);
 
   const loadData = useCallback(() => {
     if (!currentUser) return;
@@ -151,25 +154,41 @@ export default function RequestsPage() {
     setModalState(null);
   }
 
-  async function handleReject(req: AccountRequest) {
-    if (!confirm(`Reject account request for ${req.fullName}?`)) return;
-    await fetch(`/api/requests/${req.id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'rejected', resolvedById: currentUser!.id }),
+  function handleReject(req: AccountRequest) {
+    setConfirmState({
+      title: 'Reject Request',
+      message: `Are you sure you want to reject the account request for ${req.fullName}?`,
+      confirmText: 'Reject Request',
+      confirmStyle: 'warning',
+      onConfirm: async () => {
+        setConfirmState(null);
+        await fetch(`/api/requests/${req.id}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'rejected', resolvedById: currentUser!.id }),
+        });
+        push('info', 'Request rejected');
+        loadData();
+      }
     });
-    push('info', 'Request rejected');
-    loadData();
   }
 
-  async function handleDelete(req: AccountRequest) {
-    if (!confirm(`Are you sure you want to delete the account request for ${req.fullName}?`)) return;
-    const res = await fetch(`/api/requests/${req.id}`, { method: 'DELETE' });
-    if (res.ok) {
-      push('info', 'Request deleted');
-      loadData();
-    } else {
-      push('error', 'Failed to delete request');
-    }
+  function handleDelete(req: AccountRequest) {
+    setConfirmState({
+      title: 'Delete Request',
+      message: `Are you sure you want to permanently delete the account request for ${req.fullName}?`,
+      confirmText: 'Delete',
+      confirmStyle: 'danger',
+      onConfirm: async () => {
+        setConfirmState(null);
+        const res = await fetch(`/api/requests/${req.id}`, { method: 'DELETE' });
+        if (res.ok) {
+          push('info', 'Request deleted');
+          loadData();
+        } else {
+          push('error', 'Failed to delete request');
+        }
+      }
+    });
   }
 
   const statusIcon = (s: AccountRequest['status']) => {
@@ -268,6 +287,17 @@ export default function RequestsPage() {
       {modalState !== null && typeof modalState === 'object' && modalState.type === 'approve' && (
         <ApproveModal req={modalState.req} onClose={() => setModalState(null)}
           onApprove={(username, pw) => handleApprove(modalState.req, username, pw)} />
+      )}
+
+      {confirmState && (
+        <ConfirmModal
+          title={confirmState.title}
+          message={confirmState.message}
+          onConfirm={confirmState.onConfirm}
+          onCancel={() => setConfirmState(null)}
+          confirmText={confirmState.confirmText}
+          confirmStyle={confirmState.confirmStyle}
+        />
       )}
     </>
   );

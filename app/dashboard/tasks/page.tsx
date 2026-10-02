@@ -198,6 +198,8 @@ function TaskDetailModal({ task, users, onClose, onUpdate }: { task: Task; users
   );
 }
 
+import { ConfirmModal } from '../../components/ConfirmModal';
+
 // ── Main Page ──────────────────────────────────────────────────────────────
 export default function TasksPage() {
   const { currentUser } = useAuth();
@@ -212,6 +214,8 @@ export default function TasksPage() {
     | { type: 'create' } | { type: 'edit'; task: Task } | { type: 'clone'; task: Task }
     | { type: 'detail'; task: Task } | { type: 'status'; task: Task } | null
   >(null);
+
+  const [confirmState, setConfirmState] = useState<{ title: string; message: string; onConfirm: () => void; confirmText?: string; confirmStyle?: 'danger'|'brand'|'warning' } | null>(null);
 
   const loadTasks = useCallback(() => {
     if (!currentUser) return;
@@ -270,15 +274,33 @@ export default function TasksPage() {
     else push('error', 'Failed to update status');
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm('Delete this task?')) return;
-    const res = await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
-    if (res.ok) { push('info', 'Task deleted'); loadTasks(); }
-    else push('error', 'Failed to delete');
+  function handleDelete(id: string) {
+    setConfirmState({
+      title: 'Delete Task',
+      message: 'Are you sure you want to delete this task? This action cannot be undone.',
+      confirmText: 'Delete Task',
+      confirmStyle: 'danger',
+      onConfirm: async () => {
+        setConfirmState(null);
+        const res = await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+        if (res.ok) { push('info', 'Task deleted'); loadTasks(); }
+        else push('error', 'Failed to delete');
+      }
+    });
   }
 
   return (
     <>
+      {confirmState && (
+        <ConfirmModal
+          title={confirmState.title}
+          message={confirmState.message}
+          onConfirm={confirmState.onConfirm}
+          onCancel={() => setConfirmState(null)}
+          confirmText={confirmState.confirmText}
+          confirmStyle={confirmState.confirmStyle}
+        />
+      )}
       <div className="toast-container">{toasts.map((t) => <div key={t.id} className={`toast toast-${t.type}`}>{t.text}</div>)}</div>
 
       {/* Header */}
@@ -393,7 +415,7 @@ export default function TasksPage() {
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                           </button>
                         )}
-                        {isAdmin && (
+                        {(isAdmin || task.assignedById === currentUser.id) && (
                           <button className="btn btn-danger btn-sm" onClick={() => handleDelete(task.id)} title="Delete">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
                           </button>

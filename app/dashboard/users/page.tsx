@@ -129,6 +129,8 @@ function UserModal({ user, canCreateModerator, onClose, onSave, users, currentUs
   );
 }
 
+import { ConfirmModal } from '../../components/ConfirmModal';
+
 export default function UsersPage() {
   const { currentUser } = useAuth();
   const { toasts, push } = useToast();
@@ -137,6 +139,7 @@ export default function UsersPage() {
   const [filterRole, setFilterRole] = useState<string>('all');
   const [view, setView] = useState<'list' | 'grid'>('list');
   const [modalState, setModalState] = useState<{ type: 'create' } | { type: 'edit'; user: SafeUser } | null>(null);
+  const [confirmState, setConfirmState] = useState<{ title: string; message: string; onConfirm: () => void; confirmText?: string; confirmStyle?: 'danger'|'brand'|'warning' } | null>(null);
 
   const loadUsers = useCallback(() => {
     fetch('/api/users').then((r) => r.json()).then(setUsers).catch(() => {});
@@ -176,22 +179,38 @@ export default function UsersPage() {
     }
   }
 
-  async function handleDelete(user: SafeUser) {
+  function handleDelete(user: SafeUser) {
     if (user.id === currentUser!.id) { push('error', 'Cannot delete your own account'); return; }
-    if (!confirm(`Delete ${user.fullName}? This cannot be undone.`)) return;
-    const res = await fetch(`/api/users/${user.id}`, { method: 'DELETE' });
-    if (res.ok) { push('info', 'Account deleted'); loadUsers(); }
-    else push('error', 'Failed to delete');
+    setConfirmState({
+      title: 'Delete Account',
+      message: `Are you sure you want to delete ${user.fullName}? This cannot be undone.`,
+      confirmText: 'Delete Account',
+      confirmStyle: 'danger',
+      onConfirm: async () => {
+        setConfirmState(null);
+        const res = await fetch(`/api/users/${user.id}`, { method: 'DELETE' });
+        if (res.ok) { push('info', 'Account deleted'); loadUsers(); }
+        else push('error', 'Failed to delete');
+      }
+    });
   }
 
-  async function handleResetPassword(user: SafeUser) {
-    if (!confirm(`Reset ${user.fullName}'s password? They will be prompted on next login.`)) return;
-    const res = await fetch(`/api/users/${user.id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isFirstLogin: true }),
+  function handleResetPassword(user: SafeUser) {
+    setConfirmState({
+      title: 'Reset Password',
+      message: `Are you sure you want to reset ${user.fullName}'s password? They will be prompted on next login.`,
+      confirmText: 'Reset Password',
+      confirmStyle: 'warning',
+      onConfirm: async () => {
+        setConfirmState(null);
+        const res = await fetch(`/api/users/${user.id}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ isFirstLogin: true }),
+        });
+        if (res.ok) { push('success', 'Password reset — user prompted on next login'); loadUsers(); }
+        else push('error', 'Failed');
+      }
     });
-    if (res.ok) { push('success', 'Password reset — user prompted on next login'); loadUsers(); }
-    else push('error', 'Failed');
   }
 
   const roleCounts = {
@@ -362,6 +381,17 @@ export default function UsersPage() {
       {modalState && (
         <UserModal user={modalState.type === 'edit' ? modalState.user : null}
           canCreateModerator={isAdmin} users={users} currentUserId={currentUser.id} isAdmin={isAdmin} onClose={() => setModalState(null)} onSave={handleSave} />
+      )}
+
+      {confirmState && (
+        <ConfirmModal
+          title={confirmState.title}
+          message={confirmState.message}
+          onConfirm={confirmState.onConfirm}
+          onCancel={() => setConfirmState(null)}
+          confirmText={confirmState.confirmText}
+          confirmStyle={confirmState.confirmStyle}
+        />
       )}
     </>
   );
