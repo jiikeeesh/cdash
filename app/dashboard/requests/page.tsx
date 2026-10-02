@@ -219,7 +219,7 @@ export default function RequestsPage() {
           <div className="empty-state"><div className="empty-state-icon">📬</div><h3>No requests</h3><p>{currentUser.role === 'moderator' ? 'Click "New Request" to submit one.' : 'No account requests to review.'}</p></div>
         ) : (
           <div className="table-wrap">
-            <table style={{ display: 'block', overflowX: 'auto', whiteSpace: 'nowrap', width: '100%' }}>
+            <table>
               <thead><tr>
                 <th>Requested For</th>
                 {isAdmin && <th>Requested By</th>}

@@ -135,6 +135,7 @@ export default function UsersPage() {
   const [users, setUsers] = useState<SafeUser[]>([]);
   const [search, setSearch]     = useState('');
   const [filterRole, setFilterRole] = useState<string>('all');
+  const [view, setView] = useState<'list' | 'grid'>('list');
   const [modalState, setModalState] = useState<{ type: 'create' } | { type: 'edit'; user: SafeUser } | null>(null);
 
   const loadUsers = useCallback(() => {
@@ -208,12 +209,23 @@ export default function UsersPage() {
           <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--neutral-900)' }}>{isAdmin ? 'User Management' : 'Users'}</h2>
           <p className="text-sm text-neutral" style={{ marginTop: 2 }}>{isAdmin ? `${users.length} accounts total` : `${users.filter((u) => u.role === 'user').length} users`}</p>
         </div>
-        {isAdmin && (
-          <button id="create-user-btn" className="btn btn-brand" onClick={() => setModalState({ type: 'create' })}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="16" y1="11" x2="22" y2="11"/></svg>
-            Create Account
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <div style={{ display: 'flex', border: '1.5px solid var(--neutral-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+            {(['list', 'grid'] as const).map((v) => (
+              <button key={v} onClick={() => setView(v)} style={{ padding: '7px 12px', border: 'none', background: view === v ? 'var(--brand-600)' : 'white', color: view === v ? 'white' : 'var(--neutral-500)', cursor: 'pointer', transition: 'all .2s' }}>
+                {v === 'list'
+                  ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                  : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>}
+              </button>
+            ))}
+          </div>
+          {isAdmin && (
+            <button id="create-user-btn" className="btn btn-brand" onClick={() => setModalState({ type: 'create' })}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="16" y1="11" x2="22" y2="11"/></svg>
+              Create Account
+            </button>
+          )}
+        </div>
       </div>
 
       {isAdmin && (
@@ -242,12 +254,57 @@ export default function UsersPage() {
         )}
       </div>
 
-      <div className="card">
-        <div className="table-wrap">
-          {filtered.length === 0 ? (
-            <div className="empty-state"><div className="empty-state-icon">👥</div><h3>No accounts found</h3><p>Click "Create Account" to add one.</p></div>
-          ) : (
-            <table style={{ display: 'block', overflowX: 'auto', whiteSpace: 'nowrap', width: '100%' }}>
+      {filtered.length === 0 ? (
+        <div className="card"><div className="empty-state"><div className="empty-state-icon">👥</div><h3>No accounts found</h3><p>Click "Create Account" to add one.</p></div></div>
+      ) : view === 'grid' ? (
+        <div className="task-grid">
+          {filtered.map((u) => (
+            <div key={u.id} className="task-card" style={{ cursor: 'default' }}>
+              <div className="task-card-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div className="sidebar-avatar" style={{ width: 34, height: 34, fontSize: 12 }}>
+                    {u.fullName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)}
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 600, color: 'var(--neutral-900)' }}>{u.fullName}</div>
+                    <div style={{ fontSize: 12, color: 'var(--neutral-400)' }}>@{u.username}</div>
+                  </div>
+                </div>
+                <span className={`badge badge-${u.role}`} style={{ flexShrink: 0 }}>{u.role}</span>
+              </div>
+              <div className="task-card-desc" style={{ marginTop: 12, fontSize: 13, color: 'var(--neutral-600)' }}>
+                <div><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6, display: 'inline', verticalAlign: 'text-bottom' }}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>{u.email}</div>
+                {u.phone && <div style={{ marginTop: 4 }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6, display: 'inline', verticalAlign: 'text-bottom' }}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>{u.phone}</div>}
+              </div>
+              <div className="task-card-meta" style={{ marginTop: 16 }}>
+                <span style={{ fontSize: 12 }}>{u.department || 'No department'}</span>
+                {u.isFirstLogin ? <span className="badge badge-review" style={{ fontSize: 11 }}>Pending Setup</span> : <span className="badge badge-done" style={{ fontSize: 11 }}>Active</span>}
+              </div>
+              <div className="divider" style={{ margin: '12px 0' }} />
+              <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                {(isAdmin || (isModerator && u.role === 'user')) && (
+                  <>
+                    <button className="btn btn-outline btn-sm" onClick={() => setModalState({ type: 'edit', user: u })} title="Edit">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    </button>
+                    <button className="btn btn-outline btn-sm" onClick={() => handleResetPassword(u)} title="Reset password" style={{ color: 'var(--warning)', borderColor: 'var(--warning)' }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+                    </button>
+                  </>
+                )}
+                {isAdmin && u.id !== currentUser.id && (
+                  <button className="btn btn-danger btn-sm" onClick={() => handleDelete(u)} title="Delete">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="card">
+          <div className="table-wrap">
+            <table>
               <thead><tr><th>User</th><th>Contact Details</th><th>Username</th><th>Department</th><th>Role</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
               <tbody>
                 {filtered.map((u) => (
@@ -298,9 +355,9 @@ export default function UsersPage() {
                 ))}
               </tbody>
             </table>
-          )}
+          </div>
         </div>
-      </div>
+      )}
 
       {modalState && (
         <UserModal user={modalState.type === 'edit' ? modalState.user : null}

@@ -135,7 +135,7 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: currentUser.role !== 'user' ? '1fr 1fr' : '1fr', gap: 20, marginBottom: 24, marginTop: 24 }}>
+      <div className={`dashboard-grid ${currentUser.role !== 'user' ? 'dashboard-grid-2' : 'dashboard-grid-1'}`}>
         {/* Recent Tasks */}
         <div className="card" style={{ gridColumn: currentUser.role === 'user' ? '1/-1' : 'auto' }}>
           <div className="card-header">
