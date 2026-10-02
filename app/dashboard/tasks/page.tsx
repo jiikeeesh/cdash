@@ -224,7 +224,7 @@ export default function TasksPage() {
     loadTasks();
     fetch('/api/users').then((r) => r.json()).then(data => {
       if (currentUser.role === 'admin') setUsers(data);
-      else setUsers(data.filter((u: SafeUser) => u.role !== 'user' || u.id === currentUser.id || u.createdBy?.includes(currentUser.id)));
+      else setUsers(data.filter((u: SafeUser) => u.id === currentUser.id || (u.role === 'user' && u.createdBy?.includes(currentUser.id))));
     }).catch(() => {});
   }, [currentUser, loadTasks]);
 
