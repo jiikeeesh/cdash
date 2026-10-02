@@ -161,6 +161,17 @@ export default function RequestsPage() {
     loadData();
   }
 
+  async function handleDelete(req: AccountRequest) {
+    if (!confirm(`Are you sure you want to delete the account request for ${req.fullName}?`)) return;
+    const res = await fetch(`/api/requests/${req.id}`, { method: 'DELETE' });
+    if (res.ok) {
+      push('info', 'Request deleted');
+      loadData();
+    } else {
+      push('error', 'Failed to delete request');
+    }
+  }
+
   const statusIcon = (s: AccountRequest['status']) => {
     if (s === 'pending')  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
     if (s === 'approved') return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>;
@@ -232,10 +243,14 @@ export default function RequestsPage() {
                         {req.status === 'pending' ? (
                           <div style={{ display: 'flex', gap: 6 }}>
                             <button className="btn btn-success btn-sm" onClick={() => setModalState({ type: 'approve', req })}>Approve</button>
-                            <button className="btn btn-danger btn-sm" onClick={() => handleReject(req)}>Reject</button>
+                            <button className="btn btn-warning btn-sm" style={{ background: 'var(--warning)', color: 'white', border: 'none' }} onClick={() => handleReject(req)}>Reject</button>
+                            <button className="btn btn-danger btn-sm" onClick={() => handleDelete(req)}>Delete</button>
                           </div>
                         ) : (
-                          <span style={{ fontSize: 12, color: 'var(--neutral-400)' }}>by {getUserName(req.resolvedById)}</span>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span style={{ fontSize: 12, color: 'var(--neutral-400)' }}>by {getUserName(req.resolvedById)}</span>
+                            <button className="btn btn-outline btn-sm" style={{ borderColor: 'var(--error)', color: 'var(--error)' }} onClick={() => handleDelete(req)}>Delete</button>
+                          </div>
                         )}
                       </td>
                     )}

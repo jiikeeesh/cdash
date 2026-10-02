@@ -29,3 +29,19 @@ export async function PATCH(
     return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    await prisma.accountRequest.delete({
+      where: { id },
+    });
+    return NextResponse.json({ success: true });
+  } catch (e: any) {
+    if (e?.code === 'P2025') return NextResponse.json({ error: 'Request not found' }, { status: 404 });
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+  }
+}

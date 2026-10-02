@@ -2,9 +2,10 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAuth } from '../lib/auth-context';
-import type { Role } from '../lib/store';
+
+export type Role = 'admin' | 'moderator' | 'user';
 
 interface NavItem {
   href: string;
@@ -69,6 +70,66 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { currentUser, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [currentTime, setCurrentTime] = useState<Date | null>(null);
+
+  useEffect(() => {
+    setCurrentTime(new Date());
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const lastCheckedRef = useRef(new Date().toISOString());
+
+  // Close sidebar on route change
+  useEffect(() => {
+    setIsSidebarOpen(false);
+  }, [pathname]);
+
+  // Request Notification permission
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+        Notification.requestPermission();
+      }
+    }
+  }, []);
+
+  // Poll for new tasks
+  useEffect(() => {
+    if (!currentUser) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/tasks?userId=${currentUser.id}`);
+        if (!res.ok) return;
+        const tasks = await res.json();
+        
+        const newTasks = tasks.filter((t: any) => 
+          t.createdAt > lastCheckedRef.current && 
+          t.assigneeIds?.includes(currentUser.id) &&
+          t.assignedById !== currentUser.id // Don't notify if user assigned it to themselves
+        );
+        
+        if (newTasks.length > 0) {
+          lastCheckedRef.current = new Date().toISOString();
+          
+          if ('Notification' in window && Notification.permission === 'granted') {
+            newTasks.forEach((t: any) => {
+              new Notification('New Task Assigned', {
+                body: `You have been assigned: ${t.title}`,
+                icon: '/favicon.ico',
+              });
+            });
+          } else {
+             // Fallback standard alert if notifications are blocked/unsupported
+             // alert(`New Task Assigned: ${newTasks.map((t: any) => t.title).join(', ')}`);
+          }
+        }
+      } catch (err) {}
+    }, 10000); // Poll every 10s for responsiveness
+    
+    return () => clearInterval(interval);
+  }, [currentUser]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -104,8 +165,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="app-shell">
+      {/* Mobile Sidebar Overlay */}
+      {isSidebarOpen && (
+        <div 
+          className="sidebar-overlay" 
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+      
       {/* Sidebar */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
         {/* Logo */}
         <div className="sidebar-header">
           <div className="sidebar-logo">
@@ -160,10 +229,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div className="main-content">
         {/* Topbar */}
         <header className="topbar">
-          <div>
-            <div className="topbar-title">{pageTitle}</div>
-            <div className="topbar-subtitle">
-              {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          <div className="topbar-left">
+            <button 
+              className="mobile-menu-btn" 
+              onClick={() => setIsSidebarOpen(true)}
+              aria-label="Open menu"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+              </svg>
+            </button>
+            <div>
+              <div className="topbar-title">{pageTitle}</div>
+              <div className="topbar-subtitle">
+                {currentTime ? currentTime.toLocaleString('en-US', { 
+                  weekday: 'long', 
+                  year: 'numeric', 
+                  month: 'long', 
+                  day: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  hour12: true
+                }) : ''}
+              </div>
             </div>
           </div>
           <div className="topbar-actions">
