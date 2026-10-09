@@ -110,7 +110,13 @@ export default function RequestsPage() {
     fetch('/api/users').then((r) => r.json()).then(setUsers).catch(() => {});
   }, [currentUser]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+
+    // Real-time polling — refresh requests every 5 seconds
+    const interval = setInterval(loadData, 5000);
+    return () => clearInterval(interval);
+  }, [loadData]);
 
   if (!currentUser || currentUser.role === 'user') return null;
 

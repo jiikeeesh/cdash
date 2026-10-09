@@ -230,6 +230,10 @@ export default function TasksPage() {
       if (currentUser.role === 'admin') setUsers(data);
       else setUsers(data.filter((u: SafeUser) => u.id === currentUser.id || (u.role === 'user' && u.createdBy?.includes(currentUser.id))));
     }).catch(() => {});
+
+    // Real-time polling — refresh tasks every 5 seconds
+    const interval = setInterval(loadTasks, 5000);
+    return () => clearInterval(interval);
   }, [currentUser, loadTasks]);
 
   if (!currentUser) return null;
