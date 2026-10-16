@@ -1175,6 +1175,7 @@ export default function UsersPage() {
   const [assigningUser, setAssigningUser] = useState<SafeUser | null>(null);
   const [assigningModerator, setAssigningModerator] = useState<SafeUser | null>(null);
   const [confirmState, setConfirmState] = useState<{ title: string; message: string; onConfirm: () => void; confirmText?: string; confirmStyle?: 'danger'|'brand'|'warning' } | null>(null);
+  const [resetSuccessUser, setResetSuccessUser] = useState<{ user: SafeUser; password: string } | null>(null);
 
   const loadUsers = useCallback(() => {
     fetch('/api/users')
@@ -1224,6 +1225,7 @@ export default function UsersPage() {
     loadPresence();
     loadRequests();
     const interval = setInterval(() => {
+      loadUsers();
       loadPresence();
       loadRequests();
     }, 20000);
@@ -1245,17 +1247,52 @@ export default function UsersPage() {
     }
 
     if (targetUser) {
+      // Existing user: allocate by adding moderator and admin to createdBy
       const currentAssignees = targetUser.createdBy ? targetUser.createdBy.split(',').filter(Boolean) : [];
       if (!currentAssignees.includes(req.requestedById)) {
         currentAssignees.push(req.requestedById);
       }
+      if (!currentAssignees.includes(currentUser.id)) {
+        currentAssignees.push(currentUser.id);
+      }
       const newCreatedBy = currentAssignees.join(',');
 
-      await fetch(`/api/users/${targetUser.id}`, {
+      const patchRes = await fetch(`/api/users/${targetUser.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ createdBy: newCreatedBy }),
       });
+      if (!patchRes.ok) {
+        push('error', 'Failed to update user manager assignment');
+        return;
+      }
+    } else {
+      // New user requested: create the account and assign to moderator and admin
+      const baseUsername = req.fullName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'user';
+      let uniqueUsername = baseUsername;
+      if (users.some(u => u.username.toLowerCase() === uniqueUsername.toLowerCase())) {
+        uniqueUsername = `${baseUsername}${Math.floor(10 + Math.random() * 90)}`;
+      }
+
+      const createRes = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: uniqueUsername,
+          password: 'Welcome@123',
+          fullName: req.fullName,
+          email: req.email,
+          department: req.department || '',
+          role: 'user',
+          createdBy: `${currentUser.id},${req.requestedById}`,
+        }),
+      });
+
+      if (!createRes.ok) {
+        const d = await createRes.json();
+        push('error', d.error ?? 'Failed to create new user account');
+        return;
+      }
     }
 
     const res = await fetch(`/api/requests/${req.id}`, {
@@ -1266,7 +1303,7 @@ export default function UsersPage() {
 
     if (res.ok) {
       const mod = users.find((u) => u.id === req.requestedById);
-      push('success', `Approved! ${req.fullName} is now assigned to ${mod?.fullName || 'the moderator'}'s team.`);
+      push('success', `Approved! ${req.fullName} is now active on ${mod?.fullName || 'the moderator'}'s team.`);
       loadUsers();
       loadRequests();
     } else {
@@ -1402,19 +1439,26 @@ export default function UsersPage() {
   }
 
   function handleResetPassword(user: SafeUser) {
+    const defaultTempPw = 'Welcome@123';
     setConfirmState({
       title: 'Reset Password',
-      message: `Are you sure you want to reset ${user.fullName}'s password? They will be prompted on next login.`,
+      message: `Are you sure you want to reset ${user.fullName}'s password? Their password will be set to the default temporary password: "${defaultTempPw}", and they will be required to change it on their next login.`,
       confirmText: 'Reset Password',
       confirmStyle: 'warning',
       onConfirm: async () => {
         setConfirmState(null);
         const res = await fetch(`/api/users/${user.id}`, {
-          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ isFirstLogin: true }),
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: defaultTempPw, isFirstLogin: true }),
         });
-        if (res.ok) { push('success', 'Password reset — user prompted on next login'); loadUsers(); }
-        else push('error', 'Failed');
+        if (res.ok) {
+          push('success', `Password reset! Temporary password is: ${defaultTempPw}`);
+          setResetSuccessUser({ user, password: defaultTempPw });
+          loadUsers();
+        } else {
+          push('error', 'Failed to reset password');
+        }
       }
     });
   }
@@ -2373,6 +2417,71 @@ export default function UsersPage() {
           confirmText={confirmState.confirmText}
           confirmStyle={confirmState.confirmStyle}
         />
+      )}
+
+      {/* Password Reset Success & Credentials Info Modal */}
+      {resetSuccessUser && (
+        <div className="modal-backdrop" onClick={() => setResetSuccessUser(null)} style={{ zIndex: 9999 }}>
+          <div className="modal task-modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <div className="task-modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div className="task-modal-icon-badge" style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--success, #10b981)' }}>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <div>
+                  <h3 className="modal-title" style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>Password Reset Successfully</h3>
+                  <p style={{ margin: '2px 0 0 0', fontSize: 13, color: 'var(--neutral-400)' }}>Account credentials updated</p>
+                </div>
+              </div>
+              <button className="btn-close" onClick={() => setResetSuccessUser(null)}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div className="modal-body" style={{ padding: '20px 24px' }}>
+              <p style={{ fontSize: 13.5, color: 'var(--neutral-700)', marginBottom: 16, lineHeight: 1.5 }}>
+                The password for <strong>{resetSuccessUser.user.fullName}</strong> has been reset. When they log in with these credentials, they will be required to choose a new password.
+              </p>
+
+              <div style={{ background: 'var(--neutral-50)', border: '1px solid var(--neutral-200)', borderRadius: 'var(--radius-md)', padding: '14px 16px', marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, fontSize: 13 }}>
+                  <span style={{ color: 'var(--neutral-500)' }}>Username:</span>
+                  <code style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--neutral-900)', fontSize: 13.5, background: 'var(--neutral-200)', padding: '2px 8px', borderRadius: 4 }}>
+                    {resetSuccessUser.user.username}
+                  </code>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                  <span style={{ color: 'var(--neutral-500)' }}>Temporary Password:</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <code style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--brand-700)', fontSize: 13.5, background: 'var(--brand-50, rgba(99,102,241,0.1))', padding: '2px 8px', borderRadius: 4, border: '1px solid var(--brand-200, rgba(99,102,241,0.2))' }}>
+                      {resetSuccessUser.password}
+                    </code>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      style={{ padding: '3px 8px', fontSize: 11, gap: 4 }}
+                      onClick={() => {
+                        navigator.clipboard.writeText(resetSuccessUser.password);
+                        push('info', 'Password copied to clipboard!');
+                      }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: 'var(--radius-md)', padding: '12px 14px', fontSize: 12.5, color: 'var(--neutral-700)', lineHeight: 1.45 }}>
+                💡 <strong>Testing note:</strong> Remember to <strong>log out</strong> from your Admin account (or open an <em>Incognito / Private tab</em>) before testing login with this account so your current Admin session does not auto-redirect you!
+              </div>
+            </div>
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', padding: '14px 24px', borderTop: '1px solid var(--neutral-200)' }}>
+              <button className="btn btn-brand" onClick={() => setResetSuccessUser(null)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

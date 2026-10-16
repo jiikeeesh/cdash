@@ -12,20 +12,9 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const { login, currentUser, loading: authLoading } = useAuth();
+  const { login, logout, currentUser, loading: authLoading } = useAuth();
   const { applyUserTheme } = useTheme();
   const router = useRouter();
-
-  useEffect(() => {
-    if (authLoading) return;
-    if (currentUser) {
-      if (currentUser.isFirstLogin) {
-        router.replace('/change-password');
-      } else {
-        router.replace('/dashboard');
-      }
-    }
-  }, [currentUser, authLoading, router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -87,7 +76,44 @@ export default function LoginPage() {
           <p className="login-title">Welcome back</p>
           <p className="login-subtitle">Sign in to your account to continue</p>
 
-
+          {currentUser && (
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.08)',
+              border: '1px solid rgba(255, 255, 255, 0.16)',
+              borderRadius: 'var(--radius-md)',
+              padding: '12px 14px',
+              marginBottom: '22px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '10px'
+            }}>
+              <div>
+                <span style={{ opacity: 0.65, fontSize: '11px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Active Session</span>
+                <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#fff' }}>
+                  {currentUser.fullName} <span style={{ opacity: 0.6, fontWeight: 400, fontSize: '12px' }}>@{currentUser.username}</span>
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => router.push(currentUser.isFirstLogin ? '/change-password' : '/dashboard')}
+                  className="btn btn-sm"
+                  style={{ background: 'rgba(255, 255, 255, 0.15)', color: '#fff', fontSize: '12px', padding: '5px 10px' }}
+                >
+                  Go to App →
+                </button>
+                <button
+                  type="button"
+                  onClick={() => logout()}
+                  className="btn btn-sm"
+                  style={{ background: 'rgba(239, 68, 68, 0.25)', color: '#fca5a5', border: '1px solid rgba(239, 68, 68, 0.4)', fontSize: '12px', padding: '5px 10px' }}
+                >
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit}>
             {/* Username */}

@@ -824,6 +824,9 @@ tbody td { padding: 14px 16px; color: var(--neutral-700); vertical-align: middle
 .btn-danger { background: var(--error); color: white; }
 .btn-danger:hover { background: var(--error-dark); }
 
+.btn-warning { background: var(--warning); color: white; }
+.btn-warning:hover { background: var(--warning-dark); }
+
 .btn-success { background: var(--success); color: white; }
 .btn-success:hover { filter: brightness(.9); }
 

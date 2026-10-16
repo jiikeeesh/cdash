@@ -299,22 +299,55 @@ export default function RequestsPage() {
   }
 
   async function handleApprove(req: AccountRequest, username: string, tempPassword: string) {
-    // 1. Create the user account
-    const createRes = await fetch('/api/users', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password: tempPassword, fullName: req.fullName, email: req.email, department: req.department, role: 'user', createdBy: req.requestedById }),
-    });
-    if (!createRes.ok) {
-      const d = await createRes.json();
-      push('error', d.error ?? 'Failed to create account');
-      return;
+    let targetUserId = '';
+    if (req.requestedRole.startsWith('staff_assignment:')) {
+      targetUserId = req.requestedRole.replace('staff_assignment:', '');
     }
+    let targetUser = users.find((u) => u.id === targetUserId);
+    if (!targetUser) {
+      targetUser = users.find((u) => u.email.toLowerCase() === req.email.toLowerCase());
+    }
+
+    if (targetUser) {
+      // Existing user assignment: add moderator & admin to createdBy
+      const currentAssignees = targetUser.createdBy ? targetUser.createdBy.split(',').filter(Boolean) : [];
+      if (!currentAssignees.includes(req.requestedById)) currentAssignees.push(req.requestedById);
+      if (!currentAssignees.includes(currentUser!.id)) currentAssignees.push(currentUser!.id);
+
+      await fetch(`/api/users/${targetUser.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ createdBy: currentAssignees.join(',') }),
+      });
+    } else {
+      // 1. Create the user account with assigned managers
+      const createRes = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username,
+          password: tempPassword,
+          fullName: req.fullName,
+          email: req.email,
+          department: req.department,
+          role: 'user',
+          createdBy: `${currentUser!.id},${req.requestedById}`,
+        }),
+      });
+      if (!createRes.ok) {
+        const d = await createRes.json();
+        push('error', d.error ?? 'Failed to create account');
+        return;
+      }
+    }
+
     // 2. Mark request as approved
     await fetch(`/api/requests/${req.id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'approved', resolvedById: currentUser!.id }),
     });
-    push('success', `Account created for ${req.fullName}`);
+    push('success', `Approved and assigned ${req.fullName}`);
     loadData();
     setModalState(null);
   }
