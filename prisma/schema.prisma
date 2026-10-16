@@ -59,6 +59,7 @@ model AccountRequest {
   createdAt     String
   resolvedAt    String?
   resolvedById  String?
+  rejectionReason String?
 
   requestedBy   User  @relation("RequestedBy", fields: [requestedById], references: [id], onDelete: Cascade)
   resolvedBy    User? @relation("ResolvedBy",  fields: [resolvedById],  references: [id])

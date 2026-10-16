@@ -10,19 +10,24 @@ export async function PATCH(
   try {
     const { id } = await params;
     const data = await req.json();
-    const { status, resolvedById } = data;
+    const { status, resolvedById, rejectionReason } = data;
 
     if (!status || !['approved', 'rejected'].includes(status)) {
       return NextResponse.json({ error: 'Status must be approved or rejected' }, { status: 400 });
     }
 
+    const updateData: any = {
+      status,
+      resolvedById: resolvedById ?? null,
+      resolvedAt: new Date().toISOString(),
+    };
+    if (rejectionReason !== undefined) {
+      updateData.rejectionReason = rejectionReason ? String(rejectionReason).trim() : null;
+    }
+
     const request = await prisma.accountRequest.update({
       where: { id },
-      data: {
-        status,
-        resolvedById: resolvedById ?? null,
-        resolvedAt: new Date().toISOString(),
-      },
+      data: updateData,
     });
 
     // Invalidate requests cache

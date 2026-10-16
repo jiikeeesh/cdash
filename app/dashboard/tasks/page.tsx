@@ -44,60 +44,411 @@ function TaskModal({ task, users, currentUserId, canAssign, isClone, onClose, on
     status: isClone ? 'pending' : (task?.status ?? 'pending'),
     dueDate: task ? task.dueDate.slice(0, 10) : defaultDue,
   });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'moderator' | 'user' | 'admin'>('all');
+  const [submitted, setSubmitted] = useState(false);
+
   const setF = (k: string, v: any) => setForm((p) => ({ ...p, [k]: v }));
   
   // Assignable: Admins can assign anyone. Moderators can assign users and moderators.
   const assignable = users.filter((u) => u.role === 'user' || u.role === 'moderator' || (currentUserId === u.id));
 
   const toggleAssignee = (id: string) => {
+    if (!canAssign) return;
     setForm(p => ({
       ...p,
       assigneeIds: p.assigneeIds.includes(id) ? p.assigneeIds.filter(x => x !== id) : [...p.assigneeIds, id]
     }));
   };
 
+  const removeAssignee = (id: string) => {
+    if (!canAssign) return;
+    setForm(p => ({
+      ...p,
+      assigneeIds: p.assigneeIds.filter(x => x !== id)
+    }));
+  };
+
+  const selectAllVisible = () => {
+    if (!canAssign) return;
+    const visibleIds = filteredAssignable.map(u => u.id);
+    const newIds = Array.from(new Set([...form.assigneeIds, ...visibleIds]));
+    setForm(p => ({ ...p, assigneeIds: newIds }));
+  };
+
+  const clearSelection = () => {
+    if (!canAssign) return;
+    setForm(p => ({ ...p, assigneeIds: [] }));
+  };
+
+  const filteredAssignable = assignable.filter((u) => {
+    const matchesRole = roleFilter === 'all' ? true : u.role === roleFilter;
+    const query = searchQuery.trim().toLowerCase();
+    const matchesSearch = !query ||
+      u.fullName.toLowerCase().includes(query) ||
+      u.username.toLowerCase().includes(query) ||
+      u.role.toLowerCase().includes(query) ||
+      (u.department && u.department.toLowerCase().includes(query));
+    return matchesRole && matchesSearch;
+  });
+
+  const modCount = assignable.filter(u => u.role === 'moderator').length;
+  const staffCount = assignable.filter(u => u.role === 'user').length;
+  const adminCount = assignable.filter(u => u.role === 'admin').length;
+
+  const getInitials = (name: string) => {
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    return (name[0] || 'U').toUpperCase();
+  };
+
+  const handleSave = () => {
+    setSubmitted(true);
+    if (!form.title.trim() || form.assigneeIds.length === 0 || !form.dueDate) return;
+    onSave(form);
+  };
+
+  const selectedUsers = users.filter(u => form.assigneeIds.includes(u.id));
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h3 className="modal-title">{isClone ? 'Delegate Task' : task ? 'Edit Task' : 'Create Task'}</h3>
-          <button className="btn-close" onClick={onClose}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-        </div>
-        <div className="modal-body">
-          <div className="field"><label className="label">Task Title *</label>
-            <input className="input" value={form.title} onChange={(e) => setF('title', e.target.value)} placeholder="Enter task title" /></div>
-          <div className="field"><label className="label">Description</label>
-            <textarea className="textarea" value={form.description} onChange={(e) => setF('description', e.target.value)} rows={3} placeholder="Describe the task…" /></div>
-          <div className="field">
-            <label className="label">Assign To *</label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', maxHeight: '120px', overflowY: 'auto', padding: '10px', border: '1px solid var(--neutral-200)', borderRadius: 'var(--radius-md)' }}>
-              {assignable.map((u) => (
-                <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 14, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={form.assigneeIds.includes(u.id)} onChange={() => toggleAssignee(u.id)} disabled={!canAssign} />
-                  <span>{u.fullName}</span> <span className={`badge badge-${u.role}`} style={{ fontSize: 10, padding: '2px 4px' }}>{u.role}</span>
-                </label>
-              ))}
+      <div className="modal task-modal-card" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="task-modal-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="task-modal-icon-badge">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+                <path d="M9 14l2 2 4-4"/>
+              </svg>
+            </div>
+            <div>
+              <h3 className="modal-title" style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
+                {isClone ? 'Delegate Task' : task ? 'Edit Task' : 'Create Task'}
+              </h3>
+              <p style={{ margin: '2px 0 0 0', fontSize: 13, color: 'var(--neutral-400)' }}>
+                {isClone ? 'Assign a copy of this task to team members with updated scope' : task ? 'Update task requirements, assignees, priority, or deadline' : 'Specify task details and delegate deliverables to team members'}
+              </p>
             </div>
           </div>
-          <div className="field-row">
-            <div className="field"><label className="label">Due Date *</label>
-              <input className="input" type="date" value={form.dueDate} onChange={(e) => setF('dueDate', e.target.value)} /></div>
+          <button className="btn-close" onClick={onClose} aria-label="Close modal">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        <div className="modal-body" style={{ padding: '20px 28px' }}>
+          {/* Title */}
+          <div className="field">
+            <label className="label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Task Title <span style={{ color: 'var(--error, #ef4444)' }}>*</span></span>
+              {submitted && !form.title.trim() && (
+                <span className="task-field-hint-error">Title is required</span>
+              )}
+            </label>
+            <input
+              className="input"
+              value={form.title}
+              onChange={(e) => setF('title', e.target.value)}
+              placeholder="e.g. Audit API permissions & security configurations"
+              style={submitted && !form.title.trim() ? { borderColor: 'var(--error, #ef4444)' } : undefined}
+            />
           </div>
-          <div className="field-row">
-            <div className="field"><label className="label">Priority</label>
+
+          {/* Description */}
+          <div className="field">
+            <label className="label">
+              Description <span style={{ fontSize: 12, color: 'var(--neutral-400)', fontWeight: 400 }}>(optional)</span>
+            </label>
+            <textarea
+              className="textarea"
+              value={form.description}
+              onChange={(e) => setF('description', e.target.value)}
+              rows={3}
+              placeholder="Provide background context, deliverables, and acceptance criteria…"
+            />
+          </div>
+
+          {/* Assign To Section */}
+          <div className="field">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <label className="label" style={{ margin: 0 }}>
+                  Assign To <span style={{ color: 'var(--error, #ef4444)' }}>*</span>
+                </label>
+                <span className="badge" style={{
+                  background: form.assigneeIds.length > 0 ? 'var(--brand-50)' : 'var(--neutral-100)',
+                  color: form.assigneeIds.length > 0 ? 'var(--brand-700)' : 'var(--neutral-500)',
+                  fontSize: 11,
+                  padding: '2px 8px',
+                  fontWeight: 600,
+                  border: form.assigneeIds.length > 0 ? '1px solid var(--brand-200)' : '1px solid var(--neutral-200)',
+                }}>
+                  {form.assigneeIds.length} Selected
+                </span>
+              </div>
+
+              {canAssign && (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={selectAllVisible}
+                    className="btn btn-outline btn-sm"
+                    style={{ padding: '3px 8px', fontSize: 11, height: 26 }}
+                    title="Select all matching members"
+                  >
+                    Select All
+                  </button>
+                  {form.assigneeIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={clearSelection}
+                      className="btn btn-outline btn-sm"
+                      style={{ padding: '3px 8px', fontSize: 11, height: 26, color: 'var(--error, #ef4444)' }}
+                      title="Clear selection"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className={`task-assignee-box ${submitted && form.assigneeIds.length === 0 ? 'has-error' : ''}`}>
+              {/* Selected Pills Bar */}
+              {selectedUsers.length > 0 && (
+                <div className="task-selected-pills-row">
+                  {selectedUsers.map((u) => (
+                    <div key={u.id} className="task-assignee-pill">
+                      <div className={`task-assignee-avatar role-${u.role}`} style={{ width: 18, height: 18, fontSize: 9 }}>
+                        {getInitials(u.fullName)}
+                      </div>
+                      <span style={{ fontSize: 12 }}>{u.fullName}</span>
+                      {canAssign && (
+                        <button
+                          type="button"
+                          className="task-pill-remove"
+                          onClick={(e) => { e.stopPropagation(); removeAssignee(u.id); }}
+                          title={`Remove ${u.fullName}`}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Toolbar: Search & Role Filters */}
+              <div className="task-assignee-toolbar">
+                <div className="task-search-bar">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  </svg>
+                  <input
+                    type="text"
+                    className="task-search-input"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search team member…"
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className={`task-filter-tab ${roleFilter === 'all' ? 'active' : ''}`}
+                    onClick={() => setRoleFilter('all')}
+                  >
+                    All ({assignable.length})
+                  </button>
+                  {modCount > 0 && (
+                    <button
+                      type="button"
+                      className={`task-filter-tab ${roleFilter === 'moderator' ? 'active' : ''}`}
+                      onClick={() => setRoleFilter('moderator')}
+                    >
+                      ⚡ Moderator ({modCount})
+                    </button>
+                  )}
+                  {staffCount > 0 && (
+                    <button
+                      type="button"
+                      className={`task-filter-tab ${roleFilter === 'user' ? 'active' : ''}`}
+                      onClick={() => setRoleFilter('user')}
+                    >
+                      👤 Staff ({staffCount})
+                    </button>
+                  )}
+                  {adminCount > 0 && (
+                    <button
+                      type="button"
+                      className={`task-filter-tab ${roleFilter === 'admin' ? 'active' : ''}`}
+                      onClick={() => setRoleFilter('admin')}
+                    >
+                      👑 Admin ({adminCount})
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Assignees Interactive Grid */}
+              <div className="task-assignees-grid">
+                {filteredAssignable.length === 0 ? (
+                  <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '24px 10px', color: 'var(--neutral-400)', fontSize: 13 }}>
+                    <div style={{ fontSize: 22, marginBottom: 4 }}>🔍</div>
+                    No team members found matching your search.
+                    {searchQuery && (
+                      <div style={{ marginTop: 6 }}>
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm"
+                          style={{ padding: '2px 8px', fontSize: 11 }}
+                          onClick={() => { setSearchQuery(''); setRoleFilter('all'); }}
+                        >
+                          Reset Filters
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  filteredAssignable.map((u) => {
+                    const isSelected = form.assigneeIds.includes(u.id);
+                    return (
+                      <div
+                        key={u.id}
+                        className={`task-assignee-item ${isSelected ? 'selected' : ''}`}
+                        onClick={() => toggleAssignee(u.id)}
+                        role="checkbox"
+                        aria-checked={isSelected}
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === ' ' || e.key === 'Enter') {
+                            e.preventDefault();
+                            toggleAssignee(u.id);
+                          }
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+                          <div className={`task-assignee-avatar role-${u.role}`}>
+                            {getInitials(u.fullName)}
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{
+                              fontSize: 13,
+                              fontWeight: 600,
+                              color: 'var(--neutral-900)',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              lineHeight: 1.2,
+                            }}>
+                              {u.fullName}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3 }}>
+                              <span className={`badge badge-${u.role}`} style={{ fontSize: 10, padding: '1px 5px' }}>
+                                {u.role === 'admin' ? '👑 Admin' : u.role === 'moderator' ? '⚡ Moderator' : '👤 Staff'}
+                              </span>
+                              <span style={{ fontSize: 11, color: 'var(--neutral-400)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                @{u.username}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="task-check-circle">
+                          {isSelected && (
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+            {submitted && form.assigneeIds.length === 0 && (
+              <div className="task-field-hint-error">
+                <span>⚠️ Please select at least one assignee for this task.</span>
+              </div>
+            )}
+          </div>
+
+          {/* Balanced 3-column row for Due Date, Priority, and Status */}
+          <div className="task-form-row-3">
+            <div className="field" style={{ margin: 0 }}>
+              <label className="label">
+                Due Date <span style={{ color: 'var(--error, #ef4444)' }}>*</span>
+              </label>
+              <input
+                className="input"
+                type="date"
+                value={form.dueDate}
+                onChange={(e) => setF('dueDate', e.target.value)}
+                style={submitted && !form.dueDate ? { borderColor: 'var(--error, #ef4444)' } : undefined}
+              />
+            </div>
+
+            <div className="field" style={{ margin: 0 }}>
+              <label className="label">Priority</label>
               <select className="select" value={form.priority} onChange={(e) => setF('priority', e.target.value)}>
-                {PRIORITY_OPTIONS.map((p) => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}</select></div>
-            <div className="field"><label className="label">Status</label>
+                <option value="low">🟢 Low</option>
+                <option value="medium">🟡 Medium</option>
+                <option value="high">🟠 High</option>
+                <option value="critical">🔴 Critical</option>
+              </select>
+            </div>
+
+            <div className="field" style={{ margin: 0 }}>
+              <label className="label">Status</label>
               <select className="select" value={form.status} onChange={(e) => setF('status', e.target.value)}>
-                {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s.replace('-', ' ')}</option>)}</select></div>
+                <option value="pending">⏳ Pending</option>
+                <option value="in-progress">🔄 In Progress</option>
+                <option value="review">👁️ In Review</option>
+                <option value="done">✅ Done</option>
+              </select>
+            </div>
           </div>
         </div>
-        <div className="modal-footer">
-          <button className="btn btn-outline" onClick={onClose}>Cancel</button>
-          <button className="btn btn-brand" onClick={() => {
-            if (!form.title.trim() || form.assigneeIds.length === 0 || !form.dueDate) return;
-            onSave(form);
-          }}>{isClone ? 'Assign New Task' : task ? 'Save Changes' : 'Create Task'}</button>
+
+        {/* Modal Footer */}
+        <div className="modal-footer" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: 13, color: 'var(--neutral-400)' }}>
+            {form.assigneeIds.length > 0 ? (
+              <span>
+                Assigning to <strong style={{ color: 'var(--neutral-700)' }}>{form.assigneeIds.length}</strong> team {form.assigneeIds.length === 1 ? 'member' : 'members'}
+              </span>
+            ) : (
+              <span>No assignee selected</span>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button className="btn btn-outline" onClick={onClose} type="button">
+              Cancel
+            </button>
+            <button className="btn btn-brand" onClick={handleSave} type="button">
+              {isClone ? (
+                <>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M12 11v6"/><path d="M9 14l3 3 3-3"/></svg>
+                  Assign New Task
+                </>
+              ) : task ? (
+                <>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
+                  Save Changes
+                </>
+              ) : (
+                <>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Create Task
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -122,7 +473,12 @@ function UpdateStatusModal({ task, onClose, onSave }: {
           <p style={{ fontSize: 14, color: 'var(--neutral-600)', marginBottom: 16 }}><strong>{task.title}</strong></p>
           <div className="field"><label className="label">New Status</label>
             <select className="select" value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)}>
-              {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s.replace('-', ' ')}</option>)}</select></div>
+              <option value="pending">⏳ Pending</option>
+              <option value="in-progress">🔄 In Progress</option>
+              <option value="review">👁️ In Review</option>
+              <option value="done">✅ Done</option>
+            </select>
+          </div>
           <div className="field"><label className="label">Note (optional)</label>
             <textarea className="textarea" value={note} onChange={(e) => setNote(e.target.value)} rows={3} placeholder="Add a progress note…" /></div>
         </div>
@@ -181,7 +537,10 @@ function TaskDetailModal({ task, users, onClose, onUpdate }: { task: Task; users
           <div className="field-row">
             <div className="field"><label className="label">Change Status</label>
               <select className="select" value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)}>
-                {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s.replace('-', ' ')}</option>)}
+                <option value="pending">⏳ Pending</option>
+                <option value="in-progress">🔄 In Progress</option>
+                <option value="review">👁️ In Review</option>
+                <option value="done">✅ Done</option>
               </select>
             </div>
           </div>

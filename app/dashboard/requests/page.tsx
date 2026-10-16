@@ -19,7 +19,151 @@ interface AccountRequest {
   id: string; requestedById: string; requestedRole: string;
   fullName: string; email: string; department: string; reason: string;
   status: 'pending' | 'approved' | 'rejected';
+  rejectionReason?: string | null;
   createdAt: string; resolvedAt?: string | null; resolvedById?: string | null;
+}
+
+const REJECT_REASON_PRESETS = [
+  'Incomplete applicant details or invalid company email address',
+  'Position or department headcount quota has been reached',
+  'Requires direct authorization from department head before provisioning',
+  'Duplicate request — account already exists or in progress',
+  'Account role or permission level requested is not authorized',
+];
+
+function RejectAccountRequestModal({
+  req,
+  requesterName,
+  onClose,
+  onConfirm,
+}: {
+  req: AccountRequest;
+  requesterName?: string;
+  onClose: () => void;
+  onConfirm: (reason: string) => Promise<void>;
+}) {
+  const [reason, setReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reason.trim()) {
+      setError('Please provide a reason so the requester knows why their request was rejected.');
+      return;
+    }
+    setSubmitting(true);
+    setError('');
+    try {
+      await onConfirm(reason.trim());
+      onClose();
+    } catch {
+      setError('Failed to submit rejection. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal task-modal-card" style={{ maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
+        <div className="task-modal-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="task-modal-icon-badge" style={{ background: 'rgba(239, 68, 68, 0.12)', color: 'var(--error, #ef4444)' }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="15" y1="9" x2="9" y2="15"/>
+                <line x1="9" y1="9" x2="15" y2="15"/>
+              </svg>
+            </div>
+            <div>
+              <h3 className="modal-title" style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>
+                Reject Account Request
+              </h3>
+              <p style={{ margin: '2px 0 0 0', fontSize: 13, color: 'var(--neutral-400)' }}>
+                Provide feedback explaining why this account cannot be created
+              </p>
+            </div>
+          </div>
+          <button className="btn-close" onClick={onClose}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="modal-body" style={{ padding: '20px 24px' }}>
+            <div style={{ background: 'var(--neutral-50)', border: '1px solid var(--neutral-200)', borderRadius: 'var(--radius-md)', padding: '12px 14px', marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--neutral-900)' }}>
+                Applicant: <span style={{ color: 'var(--brand-700)' }}>{req.fullName}</span> ({req.email})
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--neutral-500)', marginTop: 2 }}>
+                Requested by: {requesterName || 'Moderator'} {req.department ? `· ${req.department}` : ''}
+              </div>
+              {req.reason && (
+                <div style={{ fontSize: 12, color: 'var(--neutral-600)', marginTop: 6, fontStyle: 'italic', borderTop: '1px dashed var(--neutral-200)', paddingTop: 6 }}>
+                  Requested Justification: &ldquo;{req.reason}&rdquo;
+                </div>
+              )}
+            </div>
+
+            <div className="field">
+              <label className="label">
+                Quick Reason Suggestions <span style={{ fontSize: 11, color: 'var(--neutral-400)', fontWeight: 400 }}>(click to auto-fill)</span>
+              </label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                {REJECT_REASON_PRESETS.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    className="task-filter-tab"
+                    style={{ fontSize: 11.5, padding: '4px 9px', textAlign: 'left', lineHeight: 1.3 }}
+                    onClick={() => setReason(preset)}
+                  >
+                    📌 {preset}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="field">
+              <label className="label">
+                Rejection Reason / Feedback <span style={{ color: 'var(--error, #ef4444)' }}>*</span>
+              </label>
+              <textarea
+                className="textarea"
+                rows={3}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Type or select a reason for rejecting this request..."
+                style={error ? { borderColor: 'var(--error, #ef4444)' } : undefined}
+              />
+              <span style={{ fontSize: 11.5, color: 'var(--neutral-400)', marginTop: 4, display: 'block' }}>
+                This reason will be visible to the requester on their requests list.
+              </span>
+            </div>
+
+            {error && (
+              <div style={{ color: 'var(--error, #ef4444)', fontSize: 12, marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                ⚠️ {error}
+              </div>
+            )}
+          </div>
+
+          <div className="modal-footer">
+            <button type="button" className="btn btn-outline" onClick={onClose} disabled={submitting}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn btn-danger"
+              disabled={submitting || !reason.trim()}
+              style={{ gap: 6 }}
+            >
+              {submitting ? 'Rejecting...' : 'Confirm Rejection'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 function NewRequestModal({ currentUserId, onClose, onSave }: {
@@ -99,6 +243,7 @@ export default function RequestsPage() {
   const [users, setUsers]       = useState<SafeUser[]>([]);
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [modalState, setModalState] = useState<'new' | { type: 'approve'; req: AccountRequest } | null>(null);
+  const [rejectingRequest, setRejectingRequest] = useState<AccountRequest | null>(null);
   const [confirmState, setConfirmState] = useState<{ title: string; message: string; onConfirm: () => void; confirmText?: string; confirmStyle?: 'danger'|'brand'|'warning' } | null>(null);
 
   const loadData = useCallback(() => {
@@ -175,21 +320,25 @@ export default function RequestsPage() {
   }
 
   function handleReject(req: AccountRequest) {
-    setConfirmState({
-      title: 'Reject Request',
-      message: `Are you sure you want to reject the account request for ${req.fullName}?`,
-      confirmText: 'Reject Request',
-      confirmStyle: 'warning',
-      onConfirm: async () => {
-        setConfirmState(null);
-        await fetch(`/api/requests/${req.id}`, {
-          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'rejected', resolvedById: currentUser!.id }),
-        });
-        push('info', 'Request rejected');
-        loadData();
-      }
+    setRejectingRequest(req);
+  }
+
+  async function handleConfirmReject(req: AccountRequest, reason: string) {
+    const res = await fetch(`/api/requests/${req.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: 'rejected',
+        resolvedById: currentUser!.id,
+        rejectionReason: reason,
+      }),
     });
+    if (res.ok) {
+      push('info', 'Request rejected with feedback provided');
+      loadData();
+    } else {
+      push('error', 'Failed to reject request');
+    }
   }
 
   function handleDelete(req: AccountRequest) {
@@ -347,10 +496,29 @@ export default function RequestsPage() {
                   </div>
                 )}
 
+                {/* Rejection Feedback Note */}
+                {req.status === 'rejected' && (
+                  <div style={{
+                    background: 'rgba(239, 68, 68, 0.08)',
+                    borderLeft: '3px solid var(--error, #ef4444)',
+                    padding: '8px 12px',
+                    borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
+                    fontSize: 12.5,
+                    color: 'var(--error-dark, #b91c1c)',
+                    marginTop: 6,
+                    lineHeight: 1.4,
+                  }}>
+                    <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                      <span>❌</span> Rejection Reason:
+                    </div>
+                    <span style={{ fontStyle: 'italic' }}>&ldquo;{req.rejectionReason || 'No specific feedback provided'}&rdquo;</span>
+                  </div>
+                )}
+
                 {/* Mobile Icon Action Buttons */}
-                {isAdmin && (
+                {(isAdmin || req.requestedById === currentUser.id) && (
                   <div className="mobile-icon-actions">
-                    {req.status === 'pending' ? (
+                    {isAdmin && req.status === 'pending' && (
                       <>
                         <button className="mobile-icon-btn mobile-icon-btn-success" onClick={() => setModalState({ type: 'approve', req })} title="Approve Request" aria-label="Approve Request">
                           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
@@ -358,15 +526,11 @@ export default function RequestsPage() {
                         <button className="mobile-icon-btn" style={{ color: 'var(--warning)', borderColor: 'var(--warning)' }} onClick={() => handleReject(req)} title="Reject Request" aria-label="Reject Request">
                           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                         </button>
-                        <button className="mobile-icon-btn mobile-icon-btn-danger" onClick={() => handleDelete(req)} title="Delete Request" aria-label="Delete Request">
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                        </button>
                       </>
-                    ) : (
-                      <button className="mobile-icon-btn mobile-icon-btn-danger" onClick={() => handleDelete(req)} title="Delete Request" aria-label="Delete Request">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                      </button>
                     )}
+                    <button className="mobile-icon-btn mobile-icon-btn-danger" onClick={() => handleDelete(req)} title={req.status === 'pending' && !isAdmin ? 'Cancel Request' : 'Delete Request'} aria-label="Delete Request">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                    </button>
                   </div>
                 )}
               </div>
@@ -381,7 +545,7 @@ export default function RequestsPage() {
                   <th>Requested For</th>
                   {isAdmin && <th>Requested By</th>}
                   <th>Department</th><th>Reason</th><th>Status</th><th>Date</th>
-                  {isAdmin && <th>Actions</th>}
+                  <th>Actions</th>
                 </tr></thead>
                 <tbody>
                   {filtered.map((req) => (
@@ -389,28 +553,47 @@ export default function RequestsPage() {
                       <td><div style={{ fontWeight: 600, color: 'var(--neutral-900)' }}>{req.fullName}</div><div style={{ fontSize: 12, color: 'var(--neutral-400)' }}>{req.email}</div></td>
                       {isAdmin && <td style={{ fontSize: 13 }}>{getUserName(req.requestedById)}</td>}
                       <td style={{ fontSize: 13, color: 'var(--neutral-600)' }}>{req.department || '—'}</td>
-                      <td><div style={{ fontSize: 13, color: 'var(--neutral-600)', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{req.reason || '—'}</div></td>
+                      <td>
+                        <div style={{ fontSize: 13, color: 'var(--neutral-600)', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{req.reason || '—'}</div>
+                        {req.status === 'rejected' && (
+                          <div style={{
+                            fontSize: 11.5,
+                            color: 'var(--error, #ef4444)',
+                            marginTop: 4,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}>
+                            <span style={{ fontWeight: 600 }}>❌ Reason:</span>
+                            <span title={req.rejectionReason || 'No feedback provided'} style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' }}>
+                              &ldquo;{req.rejectionReason || 'No feedback provided'}&rdquo;
+                            </span>
+                          </div>
+                        )}
+                      </td>
                       <td><span className={`badge badge-${req.status}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>{statusIcon(req.status)}{req.status}</span></td>
                       <td style={{ fontSize: 12, color: 'var(--neutral-400)' }}>
                         <div>{new Date(req.createdAt).toLocaleDateString()} {new Date(req.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                         {req.resolvedAt && <div style={{ marginTop: 2 }}>Resolved: {new Date(req.resolvedAt).toLocaleDateString()} {new Date(req.resolvedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>}
                       </td>
-                      {isAdmin && (
-                        <td>
-                          {req.status === 'pending' ? (
-                            <div style={{ display: 'flex', gap: 6 }}>
+                      <td>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          {isAdmin && req.status === 'pending' && (
+                            <>
                               <button className="btn btn-success btn-sm" onClick={() => setModalState({ type: 'approve', req })}>Approve</button>
                               <button className="btn btn-warning btn-sm" style={{ background: 'var(--warning)', color: 'white', border: 'none' }} onClick={() => handleReject(req)}>Reject</button>
-                              <button className="btn btn-danger btn-sm" onClick={() => handleDelete(req)}>Delete</button>
-                            </div>
-                          ) : (
-                            <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'space-between' }}>
-                              <span style={{ fontSize: 12, color: 'var(--neutral-400)' }}>by {getUserName(req.resolvedById)}</span>
-                              <button className="btn btn-outline btn-sm" style={{ borderColor: 'var(--error)', color: 'var(--error)' }} onClick={() => handleDelete(req)}>Delete</button>
-                            </div>
+                            </>
                           )}
-                        </td>
-                      )}
+                          {(isAdmin || req.requestedById === currentUser.id) && (
+                            <button className="btn btn-outline btn-sm" style={{ borderColor: 'var(--error)', color: 'var(--error)' }} onClick={() => handleDelete(req)}>
+                              {req.status === 'pending' && !isAdmin ? 'Cancel' : 'Delete'}
+                            </button>
+                          )}
+                          {req.resolvedById && (
+                            <span style={{ fontSize: 12, color: 'var(--neutral-400)', marginLeft: 4 }}>by {getUserName(req.resolvedById)}</span>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -426,6 +609,17 @@ export default function RequestsPage() {
       {modalState !== null && typeof modalState === 'object' && modalState.type === 'approve' && (
         <ApproveModal req={modalState.req} onClose={() => setModalState(null)}
           onApprove={(username, pw) => handleApprove(modalState.req, username, pw)} />
+      )}
+
+      {rejectingRequest && (
+        <RejectAccountRequestModal
+          req={rejectingRequest}
+          requesterName={getUserName(rejectingRequest.requestedById)}
+          onClose={() => setRejectingRequest(null)}
+          onConfirm={async (reason) => {
+            await handleConfirmReject(rejectingRequest, reason);
+          }}
+        />
       )}
 
       {confirmState && (

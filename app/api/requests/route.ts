@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const data = await req.json();
-    const { requestedById, fullName, email, department, reason } = data;
+    const { requestedById, fullName, email, department, reason, requestedRole } = data;
 
     if (!requestedById || !fullName || !email || !reason) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
     const request = await prisma.accountRequest.create({
       data: {
         requestedById,
-        requestedRole: 'user',
+        requestedRole: requestedRole || 'user',
         fullName,
         email,
         department: department ?? '',
