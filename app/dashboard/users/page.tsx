@@ -1366,7 +1366,7 @@ export default function UsersPage() {
     const q = search.toLowerCase();
     const matchSearch = !q || u.fullName.toLowerCase().includes(q) || u.username.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
     const matchRole   = filterRole === 'all' || u.role === filterRole;
-    const matchAccess = isAdmin || (u.role === 'user' && (u.createdBy?.includes(currentUser.id) || u.id === currentUser.id));
+    const matchAccess = isAdmin || (u.role === 'user' && u.createdBy?.includes(currentUser.id)) || u.id === currentUser.id;
     return matchSearch && matchRole && matchAccess;
   });
 
@@ -1734,7 +1734,7 @@ export default function UsersPage() {
 
                     {/* Action Buttons */}
                     <div className="mobile-icon-actions">
-                      {(isAdmin || (isModerator && u.role === 'user')) && (
+                      {(isAdmin || (isModerator && (u.role === 'user' || u.id === currentUser.id))) && (
                         <>
                           <button className="mobile-icon-btn" onClick={() => setModalState({ type: 'edit', user: u })} title="Edit Account" aria-label="Edit Account">
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -1816,7 +1816,7 @@ export default function UsersPage() {
                                     </td>
                                     <td>
                                       <div style={{ display: 'flex', gap: 6 }}>
-                                        {(isAdmin || (isModerator && u.role === 'user')) && (
+                                        {(isAdmin || (isModerator && (u.role === 'user' || u.id === currentUser.id))) && (
                                           <>
                                             <button className="btn btn-outline btn-sm" onClick={() => setModalState({ type: 'edit', user: u })} title="Edit">
                                               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -1989,14 +1989,36 @@ export default function UsersPage() {
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      className="btn btn-outline btn-sm"
-                      style={{ width: '100%', justifyContent: 'center' }}
-                      onClick={() => setAssigningModerator(mod)}
-                    >
-                      + Manage Team / Assign Users
-                    </button>
+                    <div style={{ display: 'flex', gap: 6, width: '100%' }}>
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        style={{ flex: 1, justifyContent: 'center', gap: 5 }}
+                        onClick={() => setAssigningModerator(mod)}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                        Manage Team
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        style={{ color: 'var(--warning)', borderColor: 'var(--warning)', padding: '5px 9px', gap: 4 }}
+                        title={`Reset ${mod.fullName}'s password`}
+                        onClick={() => handleResetPassword(mod)}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+                        Reset PW
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        style={{ padding: '5px 9px' }}
+                        title={`Edit ${mod.fullName}`}
+                        onClick={() => setModalState({ type: 'edit', user: mod })}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -2472,7 +2494,7 @@ export default function UsersPage() {
               </div>
 
               <div style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: 'var(--radius-md)', padding: '12px 14px', fontSize: 12.5, color: 'var(--neutral-700)', lineHeight: 1.45 }}>
-                💡 <strong>Testing note:</strong> Remember to <strong>log out</strong> from your Admin account (or open an <em>Incognito / Private tab</em>) before testing login with this account so your current Admin session does not auto-redirect you!
+                💡 <strong>Testing note:</strong> Remember to <strong>log out</strong> from your current account (or open an <em>Incognito / Private tab</em>) before testing login with this account so your active session does not conflict!
               </div>
             </div>
             <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', padding: '14px 24px', borderTop: '1px solid var(--neutral-200)' }}>
