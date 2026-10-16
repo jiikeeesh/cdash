@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../lib/auth-context';
+import { useTheme } from '../lib/theme-context';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
@@ -11,8 +12,20 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const { login } = useAuth();
+  const { login, currentUser, loading: authLoading } = useAuth();
+  const { applyUserTheme } = useTheme();
   const router = useRouter();
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (currentUser) {
+      if (currentUser.isFirstLogin) {
+        router.replace('/change-password');
+      } else {
+        router.replace('/dashboard');
+      }
+    }
+  }, [currentUser, authLoading, router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -32,10 +45,12 @@ export default function LoginPage() {
       return;
     }
 
-    // `login` saves to sessionStorage and update the context, but the context
-    // also returns the user state (or we can get it from session storage since we just set it)
+    // Apply user's saved theme from database across any browser/device
     const stored = sessionStorage.getItem('cdash_session');
     const user = stored ? JSON.parse(stored) : null;
+    if (user?.themeMode || user?.themeColor) {
+      applyUserTheme(user.themeMode, user.themeColor);
+    }
     
     if (user?.isFirstLogin) {
       router.push('/change-password');

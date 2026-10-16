@@ -14,6 +14,8 @@ export interface SafeUser {
   isFirstLogin: boolean;
   createdAt: string;
   createdBy: string;
+  themeMode?: string;
+  themeColor?: string;
 }
 
 interface AuthContextValue {
@@ -28,18 +30,33 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const SESSION_KEY = 'cdash_session';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<SafeUser | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  // Restore session on mount
-  useEffect(() => {
-    const stored = sessionStorage.getItem(SESSION_KEY);
-    if (stored) {
+  const [currentUser, setCurrentUser] = useState<SafeUser | null>(() => {
+    if (typeof window !== 'undefined') {
       try {
-        setCurrentUser(JSON.parse(stored) as SafeUser);
+        const stored = sessionStorage.getItem(SESSION_KEY);
+        if (stored) return JSON.parse(stored) as SafeUser;
       } catch {
         sessionStorage.removeItem(SESSION_KEY);
       }
+    }
+    return null;
+  });
+  const [loading, setLoading] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return false;
+    }
+    return true;
+  });
+
+  // Restore session / sync on mount
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem(SESSION_KEY);
+      if (stored) {
+        setCurrentUser(JSON.parse(stored) as SafeUser);
+      }
+    } catch {
+      sessionStorage.removeItem(SESSION_KEY);
     }
     setLoading(false);
   }, []);

@@ -22,7 +22,7 @@ export async function GET() {
       select: {
         id: true, username: true, role: true, fullName: true,
         email: true, phone: true, address: true, department: true, isFirstLogin: true,
-        createdAt: true, createdBy: true,
+        createdAt: true, createdBy: true, themeMode: true, themeColor: true,
       },
     });
 

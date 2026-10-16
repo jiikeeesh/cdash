@@ -71,16 +71,16 @@ export default function DashboardPage() {
 
     Promise.all(promises).then(([taskData, userData, reqData]) => {
       if (Array.isArray(taskData)) {
-        setTasks(taskData);
+        setTasks((prev) => (JSON.stringify(prev) === JSON.stringify(taskData) ? prev : taskData));
         try { sessionStorage.setItem('cdash_cached_tasks', JSON.stringify(taskData)); } catch (e) {}
       }
       if (Array.isArray(userData)) {
-        setUsers(userData);
+        setUsers((prev) => (JSON.stringify(prev) === JSON.stringify(userData) ? prev : userData));
         try { sessionStorage.setItem('cdash_cached_users', JSON.stringify(userData)); } catch (e) {}
       }
       if (Array.isArray(reqData)) {
         const count = reqData.filter((r) => r.status === 'pending').length;
-        setReqCount(count);
+        setReqCount((prev) => (prev === count ? prev : count));
         try { sessionStorage.setItem('cdash_cached_req_count', String(count)); } catch (e) {}
       }
     });

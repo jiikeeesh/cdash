@@ -548,24 +548,35 @@ input, textarea, select { font-family: inherit; }
 .sidebar-nav-item.active .nav-icon { color: var(--brand-400); }
 .sidebar-nav-item .nav-icon { flex-shrink: 0; }
 
+.sidebar-signout-wrap {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+
 .sidebar-footer {
-  padding: 12px;
-  border-top: 1px solid rgba(255,255,255,.06);
+  padding: 16px 14px 20px;
+  border-top: 1px solid rgba(255,255,255,.08);
 }
 
 .logout-btn {
   display: flex; align-items: center; gap: 10px;
-  padding: 10px 12px;
+  padding: 11px 14px;
   border-radius: var(--radius-md);
   font-size: 14px; font-weight: 500;
-  color: rgba(255,255,255,.4);
+  color: rgba(255,255,255,.65);
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.06);
   transition: all var(--transition);
   cursor: pointer;
-  border: none;
-  background: transparent;
   width: 100%;
 }
-.logout-btn:hover { color: var(--error); background: rgba(239,68,68,.1); }
+.logout-btn:hover {
+  color: #fca5a5;
+  background: rgba(239,68,68,.16);
+  border-color: rgba(239,68,68,.3);
+  transform: translateY(-1px);
+}
 
 /* ── Main content ── */
 .main-content {

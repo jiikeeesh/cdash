@@ -28,9 +28,13 @@ export default function OnlinePresenceWidget() {
         const res = await fetch(`/api/presence?userId=${currentUser.id}&role=${currentUser.role}`);
         if (res.ok) {
           const data = await res.json();
-          setOnlineUsers(data.onlineUsers || []);
-          setOfflineUsers(data.offlineUsers || []);
-          setTotalAccessible(data.totalAccessible || 0);
+          const nextOnline = data.onlineUsers || [];
+          const nextOffline = data.offlineUsers || [];
+          const nextTotal = data.totalAccessible || 0;
+
+          setOnlineUsers((prev) => (JSON.stringify(prev) === JSON.stringify(nextOnline) ? prev : nextOnline));
+          setOfflineUsers((prev) => (JSON.stringify(prev) === JSON.stringify(nextOffline) ? prev : nextOffline));
+          setTotalAccessible((prev) => (prev === nextTotal ? prev : nextTotal));
         }
       } catch (e) {} finally {
         setLoading(false);
@@ -38,7 +42,7 @@ export default function OnlinePresenceWidget() {
     };
 
     fetchPresence();
-    const interval = setInterval(fetchPresence, 12000); // refresh every 12s
+    const interval = setInterval(fetchPresence, 20000); // refresh every 20s
     return () => clearInterval(interval);
   }, [currentUser]);
 

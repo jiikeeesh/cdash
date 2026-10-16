@@ -69,10 +69,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const prevTasksRef = useRef<Map<string, { status: string; title: string }>>(new Map());
   const prevRequestsRef = useRef<Map<string, string>>(new Map());
   const isFirstPollRef = useRef(true);
+  const notifiedEventsRef = useRef<Set<string>>(new Set());
 
   // Storage key scoped to user
   const storageKey = currentUser ? `cdash_notifs_${currentUser.id}` : null;
   const soundStorageKey = 'cdash_notif_sound';
+  const eventStorageKey = currentUser ? `cdash_seen_events_${currentUser.id}` : null;
 
   // Load saved notifications & settings on login
   useEffect(() => {
@@ -83,17 +85,14 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       if (saved) {
         setNotifications(JSON.parse(saved));
       } else {
-        // Welcome notification for new session
-        const welcome: AppNotification = {
-          id: 'welcome-' + Date.now(),
-          title: `Welcome back, ${currentUser.fullName.split(' ')[0]}!`,
-          message: 'You are signed in to CompanyDash. Stay on top of your tasks and team updates here.',
-          timestamp: new Date().toISOString(),
-          type: 'system',
-          read: false,
-          priority: 'normal',
-        };
-        setNotifications([welcome]);
+        setNotifications([]);
+      }
+
+      if (eventStorageKey) {
+        const savedEvents = sessionStorage.getItem(eventStorageKey);
+        if (savedEvents) {
+          notifiedEventsRef.current = new Set(JSON.parse(savedEvents));
+        }
       }
 
       const savedSound = localStorage.getItem(soundStorageKey);
@@ -101,7 +100,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         setSoundEnabledState(savedSound === 'true');
       }
     } catch (e) {}
-  }, [currentUser, storageKey]);
+  }, [currentUser, storageKey, eventStorageKey]);
 
   // Save notifications on change
   const saveNotifications = (newNotifs: AppNotification[]) => {
@@ -161,12 +160,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }
   }, [soundEnabled, storageKey]);
 
-  // Auto-dismiss active toast after 6 seconds
+  // Auto-dismiss active toast after 4 seconds
   useEffect(() => {
     if (!activeToast) return;
     const timer = setTimeout(() => {
       setActiveToast(null);
-    }, 6000);
+    }, 4000);
     return () => clearTimeout(timer);
   }, [activeToast]);
 
@@ -178,6 +177,16 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       }
     }
   }, []);
+
+  const recordEvent = useCallback((eventKey: string) => {
+    notifiedEventsRef.current.add(eventKey);
+    if (eventStorageKey) {
+      try {
+        const list = Array.from(notifiedEventsRef.current).slice(-200);
+        sessionStorage.setItem(eventStorageKey, JSON.stringify(list));
+      } catch (e) {}
+    }
+  }, [eventStorageKey]);
 
   // Real-time polling for task assignments and status updates
   useEffect(() => {
@@ -191,48 +200,59 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
           const tasks = await tasksRes.json();
           const currentMap = new Map<string, { status: string; title: string }>();
 
-          tasks.forEach((t: any) => {
-            currentMap.set(t.id, { status: t.status, title: t.title });
+          // On initial load, only seed current map - never fire alerts
+          if (isFirstPollRef.current) {
+            tasks.forEach((t: any) => {
+              currentMap.set(t.id, { status: t.status, title: t.title });
+            });
+            prevTasksRef.current = currentMap;
+          } else {
+            tasks.forEach((t: any) => {
+              currentMap.set(t.id, { status: t.status, title: t.title });
 
-            // Check if this task was newly assigned or updated after first poll
-            if (!isFirstPollRef.current) {
               const prev = prevTasksRef.current.get(t.id);
               const isAssignee = t.assigneeIds?.includes(currentUser.id);
               const isCreator = t.assignedById === currentUser.id;
 
               if (!prev && isAssignee && !isCreator) {
-                // New task assigned to me
-                addNotification({
-                  title: 'New Task Assigned 📋',
-                  message: `You have been assigned: "${t.title}" (Priority: ${t.priority})`,
-                  type: 'task_assigned',
-                  link: '/dashboard/tasks',
-                  priority: t.priority === 'critical' ? 'critical' : 'high',
-                });
-              } else if (prev && prev.status !== t.status) {
-                // Task status changed
-                if (isCreator && !isAssignee) {
+                const eventKey = `task-assigned-${t.id}`;
+                if (!notifiedEventsRef.current.has(eventKey)) {
+                  recordEvent(eventKey);
                   addNotification({
-                    title: `Task Status: ${t.status.toUpperCase()}`,
-                    message: `"${t.title}" was moved from ${prev.status} to ${t.status}`,
-                    type: 'task_updated',
+                    title: 'New Task Assigned 📋',
+                    message: `You have been assigned: "${t.title}" (Priority: ${t.priority})`,
+                    type: 'task_assigned',
                     link: '/dashboard/tasks',
-                    priority: 'normal',
-                  });
-                } else if (isAssignee) {
-                  addNotification({
-                    title: `Task Updated`,
-                    message: `Status of "${t.title}" is now ${t.status}`,
-                    type: 'task_updated',
-                    link: '/dashboard/tasks',
-                    priority: 'normal',
+                    priority: t.priority === 'critical' ? 'critical' : 'high',
                   });
                 }
+              } else if (prev && prev.status !== t.status) {
+                const eventKey = `task-status-${t.id}-${t.status}`;
+                if (!notifiedEventsRef.current.has(eventKey)) {
+                  recordEvent(eventKey);
+                  if (isCreator && !isAssignee) {
+                    addNotification({
+                      title: `Task Status: ${t.status.toUpperCase()}`,
+                      message: `"${t.title}" was moved from ${prev.status} to ${t.status}`,
+                      type: 'task_updated',
+                      link: '/dashboard/tasks',
+                      priority: 'normal',
+                    });
+                  } else if (isAssignee) {
+                    addNotification({
+                      title: `Task Updated`,
+                      message: `Status of "${t.title}" is now ${t.status}`,
+                      type: 'task_updated',
+                      link: '/dashboard/tasks',
+                      priority: 'normal',
+                    });
+                  }
+                }
               }
-            }
-          });
+            });
 
-          prevTasksRef.current = currentMap;
+            prevTasksRef.current = currentMap;
+          }
         }
 
         // 2. Fetch requests updates (if Admin or Moderator)
@@ -245,37 +265,47 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
             const requests = await reqRes.json();
             const currentReqMap = new Map<string, string>();
 
-            requests.forEach((r: any) => {
-              currentReqMap.set(r.id, r.status);
-
-              if (!isFirstPollRef.current) {
+            if (isFirstPollRef.current) {
+              requests.forEach((r: any) => {
+                currentReqMap.set(r.id, r.status);
+              });
+              prevRequestsRef.current = currentReqMap;
+            } else {
+              requests.forEach((r: any) => {
+                currentReqMap.set(r.id, r.status);
                 const prevStatus = prevRequestsRef.current.get(r.id);
 
-                // Admin sees new pending requests
                 if (!prevStatus && r.status === 'pending' && currentUser.role === 'admin') {
-                  addNotification({
-                    title: 'New Account Request 👤',
-                    message: `${r.fullName} (${r.department || 'General'}) requested an account.`,
-                    type: 'request_pending',
-                    link: '/dashboard/requests',
-                    priority: 'high',
-                  });
+                  const eventKey = `req-pending-${r.id}`;
+                  if (!notifiedEventsRef.current.has(eventKey)) {
+                    recordEvent(eventKey);
+                    addNotification({
+                      title: 'New Account Request 👤',
+                      message: `${r.fullName} (${r.department || 'General'}) requested an account.`,
+                      type: 'request_pending',
+                      link: '/dashboard/requests',
+                      priority: 'high',
+                    });
+                  }
                 }
 
-                // Moderator sees resolution of their requests
                 if (prevStatus && prevStatus !== r.status && r.requestedById === currentUser.id) {
-                  addNotification({
-                    title: `Request ${r.status.toUpperCase()} ✨`,
-                    message: `Account request for "${r.fullName}" was ${r.status}.`,
-                    type: 'request_resolved',
-                    link: '/dashboard/requests',
-                    priority: r.status === 'approved' ? 'high' : 'normal',
-                  });
+                  const eventKey = `req-resolved-${r.id}-${r.status}`;
+                  if (!notifiedEventsRef.current.has(eventKey)) {
+                    recordEvent(eventKey);
+                    addNotification({
+                      title: `Request ${r.status.toUpperCase()} ✨`,
+                      message: `Account request for "${r.fullName}" was ${r.status}.`,
+                      type: 'request_resolved',
+                      link: '/dashboard/requests',
+                      priority: r.status === 'approved' ? 'high' : 'normal',
+                    });
+                  }
                 }
-              }
-            });
+              });
 
-            prevRequestsRef.current = currentReqMap;
+              prevRequestsRef.current = currentReqMap;
+            }
           }
         }
 
@@ -284,9 +314,9 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     };
 
     pollUpdates();
-    const interval = setInterval(pollUpdates, 8000); // Poll every 8s for real-time alerts
+    const interval = setInterval(pollUpdates, 25000); // 25s polling interval
     return () => clearInterval(interval);
-  }, [currentUser, addNotification]);
+  }, [currentUser, addNotification, recordEvent]);
 
   const markAsRead = (id: string) => {
     saveNotifications(notifications.map((n) => (n.id === id ? { ...n, read: true } : n)));

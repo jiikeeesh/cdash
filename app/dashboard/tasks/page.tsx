@@ -220,19 +220,37 @@ export default function TasksPage() {
   const loadTasks = useCallback(() => {
     if (!currentUser) return;
     const url = currentUser.role !== 'admin' ? `/api/tasks?userId=${currentUser.id}` : '/api/tasks';
-    fetch(url).then((r) => r.json()).then(setTasks).catch(() => {});
+    fetch(url)
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setTasks((prev) => {
+            if (prev.length === data.length && JSON.stringify(prev) === JSON.stringify(data)) {
+              return prev; // Unchanged, don't re-render
+            }
+            return data;
+          });
+        }
+      })
+      .catch(() => {});
   }, [currentUser]);
 
   useEffect(() => {
     if (!currentUser) return;
     loadTasks();
-    fetch('/api/users').then((r) => r.json()).then(data => {
-      if (currentUser.role === 'admin') setUsers(data);
-      else setUsers(data.filter((u: SafeUser) => u.id === currentUser.id || (u.role === 'user' && u.createdBy?.includes(currentUser.id))));
-    }).catch(() => {});
+    fetch('/api/users')
+      .then((r) => r.json())
+      .then((data) => {
+        if (!Array.isArray(data)) return;
+        const targetUsers = currentUser.role === 'admin'
+          ? data
+          : data.filter((u: SafeUser) => u.id === currentUser.id || (u.role === 'user' && u.createdBy?.includes(currentUser.id)));
+        setUsers((prev) => (JSON.stringify(prev) === JSON.stringify(targetUsers) ? prev : targetUsers));
+      })
+      .catch(() => {});
 
-    // Real-time polling — refresh tasks every 5 seconds
-    const interval = setInterval(loadTasks, 5000);
+    // Periodic check — update only if changes detected (20s)
+    const interval = setInterval(loadTasks, 20000);
     return () => clearInterval(interval);
   }, [currentUser, loadTasks]);
 

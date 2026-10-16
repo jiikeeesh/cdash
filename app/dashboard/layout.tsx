@@ -69,8 +69,8 @@ function roleBadgeClass(role: Role) {
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { currentUser, logout } = useAuth();
-  const { mode, toggleMode, themeColor, setThemeColor, setIsThemeModalOpen } = useTheme();
+  const { currentUser, logout, loading } = useAuth();
+  const { mode, toggleMode, themeColor, setThemeColor, setIsThemeModalOpen, applyUserTheme } = useTheme();
   const { unreadCount, setIsDrawerOpen } = useNotifications();
   const router = useRouter();
   const pathname = usePathname();
@@ -80,9 +80,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
   const [onlineCount, setOnlineCount] = useState(0);
 
+  // Apply user's database-persisted theme preferences on mount/login across any device
+  useEffect(() => {
+    if (currentUser?.themeMode || currentUser?.themeColor) {
+      applyUserTheme(currentUser.themeMode, currentUser.themeColor);
+    }
+  }, [currentUser?.id]);
+
   useEffect(() => {
     setCurrentTime(new Date());
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    const timer = setInterval(() => setCurrentTime(new Date()), 30000); // update every 30s instead of every 1s
     return () => clearInterval(timer);
   }, []);
 
@@ -107,13 +114,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         const res = await fetch(`/api/presence?userId=${currentUser.id}&role=${currentUser.role}`);
         if (res.ok) {
           const data = await res.json();
-          setOnlineCount(data.totalOnline || 0);
+          const count = data.totalOnline || 0;
+          setOnlineCount((prev) => (prev === count ? prev : count));
         }
       } catch (e) {}
     };
 
     pingAndFetchPresence();
-    const interval = setInterval(pingAndFetchPresence, 15000); // 15s heartbeat
+    const interval = setInterval(pingAndFetchPresence, 20000); // 20s heartbeat
     return () => clearInterval(interval);
   }, [currentUser]);
 
@@ -129,25 +137,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         if (res.ok) {
           const data = await res.json();
           const pending = data.filter((r: any) => r.status === 'pending').length;
-          setPendingRequestsCount(pending);
+          setPendingRequestsCount((prev) => (prev === pending ? prev : pending));
         }
       } catch (err) {}
     };
 
     fetchRequests();
-    const interval = setInterval(fetchRequests, 10000);
+    const interval = setInterval(fetchRequests, 20000); // 20s interval
     return () => clearInterval(interval);
   }, [currentUser]);
 
   useEffect(() => {
+    if (loading) return; // Do not redirect while session is hydrating
     if (!currentUser) {
       router.replace('/login');
     } else if (currentUser.isFirstLogin) {
       router.replace('/change-password');
     }
-  }, [currentUser, router]);
+  }, [currentUser, loading, router]);
 
-  if (!currentUser) {
+  if (loading || !currentUser) {
     return (
       <div className="page-redirect">
         <div className="spinner spinner-dark" />
@@ -227,17 +236,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               {item.label}
             </Link>
           ))}
-        </nav>
 
-        {/* Footer */}
-        <div className="sidebar-footer">
-          <button className="logout-btn" onClick={handleLogout} id="sidebar-logout">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
-            </svg>
-            Sign out
-          </button>
-        </div>
+          {/* Elevated Sign Out Button directly under Navigation */}
+          <div className="sidebar-signout-wrap">
+            <button 
+              type="button" 
+              className="logout-btn" 
+              onClick={handleLogout} 
+              id="sidebar-logout"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
+              </svg>
+              Sign out
+            </button>
+          </div>
+        </nav>
       </aside>
 
       {/* Main Content */}
@@ -387,6 +401,33 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 Hi, <strong style={{ color: 'var(--neutral-800)' }}>{currentUser.fullName.split(' ')[0]}</strong>
               </div>
               <div className="sidebar-avatar" style={{ width: 34, height: 34, fontSize: 12 }}>{initials}</div>
+
+              {/* Topbar Quick Sign Out */}
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="topbar-btn-ghost"
+                title="Sign out"
+                style={{
+                  padding: '6px 10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  borderRadius: 'var(--radius-md)',
+                  cursor: 'pointer',
+                  color: 'var(--error)',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  border: '1px solid var(--error-light)',
+                  background: 'rgba(239, 68, 68, 0.05)',
+                  marginLeft: 4,
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
+                </svg>
+                <span>Sign out</span>
+              </button>
             </div>
           </div>
 
@@ -582,6 +623,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </div>
               </div>
 
+              {/* Elevated Sign out button */}
+              <button 
+                type="button"
+                onClick={handleLogout}
+                className="btn btn-outline" 
+                style={{
+                  width: '100%',
+                  borderColor: 'rgba(239, 68, 68, 0.3)',
+                  color: 'var(--error)',
+                  background: 'rgba(239, 68, 68, 0.05)',
+                  justifyContent: 'center',
+                  padding: '11px',
+                  marginBottom: 16,
+                  fontWeight: 600,
+                  fontSize: 14,
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}>
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
+                </svg>
+                Sign out
+              </button>
+
               {/* Details as Icons */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 18 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--neutral-700)' }}>
@@ -712,24 +776,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </button>
               </div>
 
-              {/* Sign out button */}
+              {/* Close sheet */}
               <button 
-                onClick={handleLogout}
-                className="btn btn-outline" 
-                style={{ width: '100%', borderColor: 'var(--error-light)', color: 'var(--error)', justifyContent: 'center', padding: '12px', marginBottom: 8 }}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}>
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
-                </svg>
-                Sign Out
-              </button>
-
-              <button 
+                type="button"
                 onClick={() => setIsProfileSheetOpen(false)}
                 className="btn btn-outline" 
                 style={{ width: '100%', justifyContent: 'center', padding: '10px' }}
               >
-                Cancel
+                Close
               </button>
             </div>
           </>

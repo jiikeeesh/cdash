@@ -17,7 +17,7 @@ const strengthLabel = ['', 'Weak', 'Fair', 'Good', 'Strong'];
 const strengthClass = ['', 'weak', 'fair', 'good', 'strong'];
 
 export default function ChangePasswordPage() {
-  const { currentUser, refreshUser, logout } = useAuth();
+  const { currentUser, refreshUser, logout, loading: authLoading } = useAuth();
   const router = useRouter();
 
   const [newPw, setNewPw] = useState('');
@@ -28,14 +28,15 @@ export default function ChangePasswordPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (authLoading) return;
     if (!currentUser) {
       router.replace('/login');
     } else if (!currentUser.isFirstLogin) {
       router.replace('/dashboard');
     }
-  }, [currentUser, router]);
+  }, [currentUser, authLoading, router]);
 
-  if (!currentUser) return null;
+  if (authLoading || !currentUser) return null;
 
   const strength = getStrength(newPw);
 

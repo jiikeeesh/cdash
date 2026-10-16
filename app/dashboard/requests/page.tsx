@@ -106,15 +106,29 @@ export default function RequestsPage() {
     const url = currentUser.role === 'moderator'
       ? `/api/requests?requestedById=${currentUser.id}`
       : '/api/requests';
-    fetch(url).then((r) => r.json()).then(setRequests).catch(() => {});
-    fetch('/api/users').then((r) => r.json()).then(setUsers).catch(() => {});
+    fetch(url)
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setRequests((prev) => (JSON.stringify(prev) === JSON.stringify(data) ? prev : data));
+        }
+      })
+      .catch(() => {});
+    fetch('/api/users')
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setUsers((prev) => (JSON.stringify(prev) === JSON.stringify(data) ? prev : data));
+        }
+      })
+      .catch(() => {});
   }, [currentUser]);
 
   useEffect(() => {
     loadData();
 
-    // Real-time polling — refresh requests every 5 seconds
-    const interval = setInterval(loadData, 5000);
+    // Polling every 20s with equality guards to prevent needless re-renders
+    const interval = setInterval(loadData, 20000);
     return () => clearInterval(interval);
   }, [loadData]);
 

@@ -16,7 +16,7 @@ export async function GET(
       select: {
         id: true, username: true, role: true, fullName: true,
         email: true, phone: true, address: true, department: true, isFirstLogin: true,
-        createdAt: true, createdBy: true,
+        createdAt: true, createdBy: true, themeMode: true, themeColor: true,
       },
     });
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
@@ -33,7 +33,7 @@ export async function PATCH(
   try {
     const { id } = await params;
     const data = await req.json();
-    const { password, fullName, email, phone, address, department, role, isFirstLogin, createdBy } = data;
+    const { password, fullName, email, phone, address, department, role, isFirstLogin, createdBy, themeMode, themeColor } = data;
 
     const updateData: Record<string, unknown> = {};
     if (fullName !== undefined)     updateData.fullName     = fullName;
@@ -43,6 +43,8 @@ export async function PATCH(
     if (department !== undefined)   updateData.department   = department;
     if (role !== undefined)         updateData.role         = role;
     if (createdBy !== undefined)    updateData.createdBy    = createdBy;
+    if (themeMode !== undefined)    updateData.themeMode    = themeMode;
+    if (themeColor !== undefined)   updateData.themeColor   = themeColor;
     if (password !== undefined && password !== '') updateData.password = password;
     if (isFirstLogin !== undefined) updateData.isFirstLogin = isFirstLogin;
 
@@ -52,7 +54,7 @@ export async function PATCH(
       select: {
         id: true, username: true, role: true, fullName: true,
         email: true, phone: true, address: true, department: true, isFirstLogin: true,
-        createdAt: true, createdBy: true,
+        createdAt: true, createdBy: true, themeMode: true, themeColor: true,
       },
     });
 
@@ -62,8 +64,9 @@ export async function PATCH(
 
     return NextResponse.json(user);
   } catch (e: any) {
+    console.error('PATCH /api/users/[id] error:', e);
     if (e?.code === 'P2025') return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 });
   }
 }
 

@@ -143,7 +143,14 @@ export default function UsersPage() {
   const [confirmState, setConfirmState] = useState<{ title: string; message: string; onConfirm: () => void; confirmText?: string; confirmStyle?: 'danger'|'brand'|'warning' } | null>(null);
 
   const loadUsers = useCallback(() => {
-    fetch('/api/users').then((r) => r.json()).then(setUsers).catch(() => {});
+    fetch('/api/users')
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setUsers((prev) => (JSON.stringify(prev) === JSON.stringify(data) ? prev : data));
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const loadPresence = useCallback(() => {
@@ -151,8 +158,13 @@ export default function UsersPage() {
     fetch(`/api/presence?userId=${currentUser.id}&role=${currentUser.role}`)
       .then((r) => r.json())
       .then((data) => {
-        if (data.onlineUsers) {
-          setOnlineUserIds(new Set(data.onlineUsers.map((u: any) => u.id)));
+        if (data.onlineUsers && Array.isArray(data.onlineUsers)) {
+          const newIds = (data.onlineUsers as any[]).map((u: any) => u.id).sort().join(',');
+          setOnlineUserIds((prev) => {
+            const prevIds = Array.from(prev).sort().join(',');
+            if (prevIds === newIds) return prev;
+            return new Set(data.onlineUsers.map((u: any) => u.id));
+          });
         }
       })
       .catch(() => {});
@@ -161,7 +173,7 @@ export default function UsersPage() {
   useEffect(() => {
     loadUsers();
     loadPresence();
-    const interval = setInterval(loadPresence, 10000);
+    const interval = setInterval(loadPresence, 20000);
     return () => clearInterval(interval);
   }, [loadUsers, loadPresence]);
 

@@ -23,7 +23,8 @@ export async function POST(req: NextRequest) {
     // Return user (exclude password)
     const { password: _pw, ...safeUser } = user;
     return NextResponse.json({ user: safeUser });
-  } catch (e) {
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+  } catch (e: any) {
+    console.error('Login route error:', e);
+    return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 });
   }
 }

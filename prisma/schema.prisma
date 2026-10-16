@@ -21,6 +21,8 @@ model User {
   isFirstLogin Boolean @default(true)
   createdAt   String
   createdBy   String   @default("system")
+  themeMode   String   @default("light")
+  themeColor  String   @default("indigo")
 
   // Relations
   assignedTasks    Task[]           @relation("TaskAssignees")

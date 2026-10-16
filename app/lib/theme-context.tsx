@@ -184,6 +184,7 @@ interface ThemeContextType {
   customHex: string;
   setThemeColor: (colorKey: string, customHex?: string) => void;
   resetTheme: () => void;
+  applyUserTheme: (themeMode?: string, themeColor?: string) => void;
   isThemeModalOpen: boolean;
   setIsThemeModalOpen: (open: boolean) => void;
   activePreset: ColorPreset | null;
@@ -226,6 +227,32 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {}
   };
 
+  // Sync theme choices to database so user retains their theme anywhere they log in
+  const syncPreferencesToServer = (newMode: ThemeMode, newColor: string, hex?: string) => {
+    try {
+      const sessionStr = sessionStorage.getItem('cdash_session');
+      if (sessionStr) {
+        const user = JSON.parse(sessionStr);
+        if (user && user.id) {
+          const finalColor = newColor === 'custom' && hex ? hex : newColor;
+          user.themeMode = newMode;
+          user.themeColor = finalColor;
+          sessionStorage.setItem('cdash_session', JSON.stringify(user));
+
+          // Save to server database asynchronously
+          fetch(`/api/users/${user.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              themeMode: newMode,
+              themeColor: finalColor,
+            }),
+          }).catch(() => {});
+        }
+      }
+    } catch (e) {}
+  };
+
   useEffect(() => {
     setMounted(true);
     let savedMode: ThemeMode = 'light';
@@ -233,18 +260,35 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     let savedCustomHex = '#6366f1';
 
     try {
-      const localMode = localStorage.getItem('cdash_theme_mode') as ThemeMode | null;
-      if (localMode === 'light' || localMode === 'dark') {
-        savedMode = localMode;
-      } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-        savedMode = 'dark';
+      // Check session user first if available
+      const sessionStr = sessionStorage.getItem('cdash_session');
+      if (sessionStr) {
+        const user = JSON.parse(sessionStr);
+        if (user?.themeMode === 'light' || user?.themeMode === 'dark') {
+          savedMode = user.themeMode;
+        }
+        if (user?.themeColor) {
+          if (user.themeColor.startsWith('#')) {
+            savedColor = 'custom';
+            savedCustomHex = user.themeColor;
+          } else {
+            savedColor = user.themeColor;
+          }
+        }
+      } else {
+        const localMode = localStorage.getItem('cdash_theme_mode') as ThemeMode | null;
+        if (localMode === 'light' || localMode === 'dark') {
+          savedMode = localMode;
+        } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+          savedMode = 'dark';
+        }
+
+        const localColor = localStorage.getItem('cdash_theme_color');
+        if (localColor) savedColor = localColor;
+
+        const localHex = localStorage.getItem('cdash_custom_hex');
+        if (localHex) savedCustomHex = localHex;
       }
-
-      const localColor = localStorage.getItem('cdash_theme_color');
-      if (localColor) savedColor = localColor;
-
-      const localHex = localStorage.getItem('cdash_custom_hex');
-      if (localHex) savedCustomHex = localHex;
     } catch (e) {}
 
     setModeState(savedMode);
@@ -256,6 +300,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const setMode = (newMode: ThemeMode) => {
     setModeState(newMode);
     applyTheme(newMode, themeColor, customHex);
+    syncPreferencesToServer(newMode, themeColor, customHex);
   };
 
   const toggleMode = () => {
@@ -267,6 +312,28 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setThemeColorState(colorKey);
     if (hex) setCustomHexState(hex);
     applyTheme(mode, colorKey, hex || customHex);
+    syncPreferencesToServer(mode, colorKey, hex || customHex);
+  };
+
+  const applyUserTheme = (newMode?: string, newColor?: string) => {
+    const validMode: ThemeMode = newMode === 'dark' ? 'dark' : 'light';
+    let validColor = newColor || 'indigo';
+    let validHex = customHex;
+
+    if (validColor.startsWith('#')) {
+      validHex = validColor;
+      validColor = 'custom';
+    }
+
+    // Do nothing if already applied to prevent unwanted re-renders
+    if (validMode === mode && validColor === themeColor && (validColor !== 'custom' || validHex === customHex)) {
+      return;
+    }
+
+    setModeState(validMode);
+    setThemeColorState(validColor);
+    if (validColor === 'custom') setCustomHexState(validHex);
+    applyTheme(validMode, validColor, validHex);
   };
 
   const resetTheme = () => {
@@ -274,6 +341,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setThemeColorState('indigo');
     setCustomHexState('#6366f1');
     applyTheme('light', 'indigo', '#6366f1');
+    syncPreferencesToServer('light', 'indigo', '#6366f1');
   };
 
   const activePreset = PRESET_COLORS.find((p) => p.id === themeColor) || null;
@@ -287,6 +355,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         themeColor,
         customHex,
         setThemeColor,
+        applyUserTheme,
         resetTheme,
         isThemeModalOpen,
         setIsThemeModalOpen,
