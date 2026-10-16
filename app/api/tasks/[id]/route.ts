@@ -2,6 +2,7 @@
 // DELETE /api/tasks/[id]  → delete task
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/db';
+import { cacheInvalidate } from '@/app/lib/cache';
 
 export async function PATCH(
   req: NextRequest,
@@ -28,6 +29,10 @@ export async function PATCH(
       data: updateData,
       include: { assignees: { select: { id: true, fullName: true } } }
     });
+
+    // Invalidate tasks cache
+    cacheInvalidate('tasks');
+
     return NextResponse.json({ 
       ...task, 
       notes: JSON.parse(task.notes || '[]'),
@@ -46,6 +51,10 @@ export async function DELETE(
   try {
     const { id } = await params;
     await prisma.task.delete({ where: { id } });
+
+    // Invalidate tasks cache
+    cacheInvalidate('tasks');
+
     return NextResponse.json({ success: true });
   } catch (e: any) {
     if (e?.code === 'P2025') return NextResponse.json({ error: 'Task not found' }, { status: 404 });

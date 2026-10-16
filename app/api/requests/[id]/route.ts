@@ -1,6 +1,7 @@
 // PATCH /api/requests/[id]  → approve or reject a request
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/db';
+import { cacheInvalidate } from '@/app/lib/cache';
 
 export async function PATCH(
   req: NextRequest,
@@ -23,6 +24,10 @@ export async function PATCH(
         resolvedAt: new Date().toISOString(),
       },
     });
+
+    // Invalidate requests cache
+    cacheInvalidate('requests');
+
     return NextResponse.json(request);
   } catch (e: any) {
     if (e?.code === 'P2025') return NextResponse.json({ error: 'Request not found' }, { status: 404 });
@@ -39,6 +44,10 @@ export async function DELETE(
     await prisma.accountRequest.delete({
       where: { id },
     });
+
+    // Invalidate requests cache
+    cacheInvalidate('requests');
+
     return NextResponse.json({ success: true });
   } catch (e: any) {
     if (e?.code === 'P2025') return NextResponse.json({ error: 'Request not found' }, { status: 404 });

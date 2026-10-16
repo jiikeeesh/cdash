@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth, type SafeUser } from '../lib/auth-context';
+import OnlinePresenceWidget from '../components/OnlinePresenceWidget';
 
 interface Task {
   id: string; title: string; description: string;
@@ -39,26 +40,50 @@ export default function DashboardPage() {
   const [tasks, setTasks]     = useState<Task[]>([]);
   const [reqCount, setReqCount] = useState(0);
 
+  // Restore cached dashboard data for instant 0ms initial render
+  useEffect(() => {
+    try {
+      const cachedTasks = sessionStorage.getItem('cdash_cached_tasks');
+      const cachedUsers = sessionStorage.getItem('cdash_cached_users');
+      const cachedReqs  = sessionStorage.getItem('cdash_cached_req_count');
+      if (cachedTasks) setTasks(JSON.parse(cachedTasks));
+      if (cachedUsers) setUsers(JSON.parse(cachedUsers));
+      if (cachedReqs)  setReqCount(Number(cachedReqs));
+    } catch (e) {}
+  }, []);
+
   useEffect(() => {
     if (!currentUser) return;
 
-    // Fetch users (admin/moderator only)
-    if (currentUser.role !== 'user') {
-      fetch('/api/users').then((r) => r.json()).then(setUsers).catch(() => {});
-    }
-
-    // Fetch tasks — all for admin, own/assigned for user and moderator
-    const url = currentUser.role !== 'admin'
+    // Parallel fetch all dashboard data concurrently
+    const tasksUrl = currentUser.role !== 'admin'
       ? `/api/tasks?userId=${currentUser.id}`
       : '/api/tasks';
-    fetch(url).then((r) => r.json()).then(setTasks).catch(() => {});
 
-    // Pending requests count
+    const promises: Promise<any>[] = [
+      fetch(tasksUrl).then((r) => r.json()).catch(() => []),
+    ];
+
     if (currentUser.role !== 'user') {
-      fetch('/api/requests').then((r) => r.json()).then((data: any[]) => {
-        setReqCount(data.filter((r) => r.status === 'pending').length);
-      }).catch(() => {});
+      promises.push(fetch('/api/users').then((r) => r.json()).catch(() => []));
+      promises.push(fetch('/api/requests').then((r) => r.json()).catch(() => []));
     }
+
+    Promise.all(promises).then(([taskData, userData, reqData]) => {
+      if (Array.isArray(taskData)) {
+        setTasks(taskData);
+        try { sessionStorage.setItem('cdash_cached_tasks', JSON.stringify(taskData)); } catch (e) {}
+      }
+      if (Array.isArray(userData)) {
+        setUsers(userData);
+        try { sessionStorage.setItem('cdash_cached_users', JSON.stringify(userData)); } catch (e) {}
+      }
+      if (Array.isArray(reqData)) {
+        const count = reqData.filter((r) => r.status === 'pending').length;
+        setReqCount(count);
+        try { sessionStorage.setItem('cdash_cached_req_count', String(count)); } catch (e) {}
+      }
+    });
   }, [currentUser]);
 
   if (!currentUser) return null;
@@ -135,6 +160,9 @@ export default function DashboardPage() {
         )}
       </div>
 
+      {/* Real-time Team Online Presence Widget (Admin sees all, Moderator sees assigned) */}
+      <OnlinePresenceWidget />
+
       <div className={`dashboard-grid ${currentUser.role !== 'user' ? 'dashboard-grid-2' : 'dashboard-grid-1'}`}>
         {/* Recent Tasks */}
         <div className="card" style={{ gridColumn: currentUser.role === 'user' ? '1/-1' : 'auto' }}>
@@ -142,7 +170,7 @@ export default function DashboardPage() {
             <div><div className="card-title">Recent Tasks</div><div className="card-subtitle">Latest activity</div></div>
             <Link href="/dashboard/tasks" className="btn btn-outline btn-sm">View all</Link>
           </div>
-          <div className="table-wrap">
+          <div className="card-body" style={{ padding: 0 }}>
             {recentTasks.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-state-icon">📋</div>
@@ -150,21 +178,100 @@ export default function DashboardPage() {
                 <p>{currentUser.role !== 'user' ? 'Create a task to get started.' : 'No tasks assigned to you.'}</p>
               </div>
             ) : (
-              <table>
-                <thead><tr><th>Task</th><th>Priority</th><th>Status</th></tr></thead>
-                <tbody>
+              <>
+                {/* Mobile View: Details as Icons */}
+                <div className="mobile-only-cards" style={{ padding: 12 }}>
                   {recentTasks.map((task) => (
-                    <tr key={task.id}>
-                      <td>
-                        <div style={{ fontWeight: 600, color: 'var(--neutral-900)', fontSize: 13 }}>{task.title}</div>
-                        <div style={{ fontSize: 12, color: 'var(--neutral-400)' }}>Due {new Date(task.dueDate).toLocaleDateString()}</div>
-                      </td>
-                      <td>{priorityBadge(task.priority)}</td>
-                      <td>{statusBadge(task.status)}</td>
-                    </tr>
+                    <div key={`m-${task.id}`} className="mobile-icon-card" style={{ padding: 12 }}>
+                      <div className="mobile-icon-card-header">
+                        <div className="mobile-icon-card-title" style={{ fontSize: 14 }}>{task.title}</div>
+                        {/* Status as Icon */}
+                        {task.status === 'pending' && (
+                          <span className="icon-chip status-chip-pending" title="Pending">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            Pending
+                          </span>
+                        )}
+                        {task.status === 'in-progress' && (
+                          <span className="icon-chip status-chip-in-progress" title="In Progress">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+                            In Progress
+                          </span>
+                        )}
+                        {task.status === 'review' && (
+                          <span className="icon-chip status-chip-review" title="In Review">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                            Review
+                          </span>
+                        )}
+                        {task.status === 'done' && (
+                          <span className="icon-chip status-chip-done" title="Completed">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                            Done
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Details as Icons */}
+                      <div className="mobile-details-icon-bar" style={{ margin: '6px 0 0' }}>
+                        {/* Priority Icon Chip */}
+                        {task.priority === 'critical' && (
+                          <span className="icon-chip priority-chip-critical" title="Critical Priority">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                            Critical
+                          </span>
+                        )}
+                        {task.priority === 'high' && (
+                          <span className="icon-chip priority-chip-high" title="High Priority">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+                            High
+                          </span>
+                        )}
+                        {task.priority === 'medium' && (
+                          <span className="icon-chip priority-chip-medium" title="Medium Priority">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg>
+                            Medium
+                          </span>
+                        )}
+                        {task.priority === 'low' && (
+                          <span className="icon-chip priority-chip-low" title="Low Priority">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+                            Low
+                          </span>
+                        )}
+
+                        {/* Due Date as Icon */}
+                        <span className="icon-chip" title="Due Date">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                            <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                          </svg>
+                          {new Date(task.dueDate).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                </div>
+
+                {/* Desktop View: Table */}
+                <div className="table-wrap desktop-only-table">
+                  <table>
+                    <thead><tr><th>Task</th><th>Priority</th><th>Status</th></tr></thead>
+                    <tbody>
+                      {recentTasks.map((task) => (
+                        <tr key={task.id}>
+                          <td>
+                            <div style={{ fontWeight: 600, color: 'var(--neutral-900)', fontSize: 13 }}>{task.title}</div>
+                            <div style={{ fontSize: 12, color: 'var(--neutral-400)' }}>Due {new Date(task.dueDate).toLocaleDateString()}</div>
+                          </td>
+                          <td>{priorityBadge(task.priority)}</td>
+                          <td>{statusBadge(task.status)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
         </div>

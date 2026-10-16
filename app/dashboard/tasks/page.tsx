@@ -209,7 +209,7 @@ export default function TasksPage() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus]     = useState<TaskStatus | 'all'>('all');
   const [filterPriority, setFilterPriority] = useState<TaskPriority | 'all'>('all');
-  const [view, setView]     = useState<'list' | 'grid'>('list');
+  const [view, setView]     = useState<'grid' | 'list'>('grid');
   const [modalState, setModalState] = useState<
     | { type: 'create' } | { type: 'edit'; task: Task } | { type: 'clone'; task: Task }
     | { type: 'detail'; task: Task } | { type: 'status'; task: Task } | null
@@ -314,12 +314,18 @@ export default function TasksPage() {
           <p className="text-sm text-neutral" style={{ marginTop: 2 }}>{filtered.length} task{filtered.length !== 1 ? 's' : ''} found</p>
         </div>
         <div className="flex items-center gap-2">
-          <div style={{ display: 'flex', border: '1.5px solid var(--neutral-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-            {(['list', 'grid'] as const).map((v) => (
-              <button key={v} onClick={() => setView(v)} style={{ padding: '7px 12px', border: 'none', background: view === v ? 'var(--brand-600)' : 'white', color: view === v ? 'white' : 'var(--neutral-500)', cursor: 'pointer', transition: 'all .2s' }}>
-                {v === 'list'
-                  ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-                  : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>}
+          <div className="view-toggle-group" style={{ display: 'flex', border: '1.5px solid var(--neutral-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+            {(['grid', 'list'] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                style={{ padding: '7px 12px', border: 'none', background: view === v ? 'var(--brand-600)' : 'var(--neutral-0)', color: view === v ? 'white' : 'var(--neutral-500)', cursor: 'pointer', transition: 'all .2s' }}
+                title={v === 'grid' ? 'Icon View' : 'Table View'}
+                aria-label={v === 'grid' ? 'Icon View' : 'Table View'}
+              >
+                {v === 'grid'
+                  ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                  : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>}
               </button>
             ))}
           </div>
@@ -348,91 +354,215 @@ export default function TasksPage() {
         </select>
       </div>
 
-      {/* Task list */}
-      {filtered.length === 0 ? (
-        <div className="card"><div className="empty-state"><div className="empty-state-icon">📋</div><h3>No tasks found</h3><p>{canAssign ? 'Click "Assign Task" to create one.' : 'No tasks assigned to you yet.'}</p></div></div>
-      ) : view === 'grid' ? (
-        <div className="task-grid">
-          {filtered.map((task) => (
-            <div key={task.id} className={`task-card priority-${task.priority}`} onClick={() => setModalState({ type: 'detail', task })}>
-              <div className="task-card-header">
-                <div className="task-card-title">{task.title}</div>
-                <span className={`badge badge-${task.status}`} style={{ flexShrink: 0, fontSize: 11 }}>{task.status.replace('-', ' ')}</span>
-              </div>
-              <div className="task-card-desc">{task.description || 'No description.'}</div>
-              <div className="task-card-meta">
-                <div className="task-card-assignee" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
-                  {task.assigneeIds.slice(0, 2).map(id => (
-                    <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <div className="mini-avatar">{getUserName(id).slice(0, 2).toUpperCase()}</div>
-                      <span style={{ fontSize: 11 }}>{getUserName(id)}</span>
-                    </div>
-                  ))}
-                  {task.assigneeIds.length > 2 && <span style={{ fontSize: 10, color: 'var(--neutral-400)' }}>+{task.assigneeIds.length - 2} more</span>}
-                </div>
-                <span>Due {new Date(task.dueDate).toLocaleDateString()}</span>
-              </div>
+      {/* Helper function to render an Icon View Card */}
+      {(() => {
+        const renderTaskIconCard = (task: Task, keyPrefix: string) => (
+          <div key={`${keyPrefix}-${task.id}`} className="mobile-icon-card">
+            <div className="mobile-icon-card-header">
+              <div className="mobile-icon-card-title">{task.title}</div>
+              {/* Status as Icon */}
+              {task.status === 'pending' && (
+                <span className="icon-chip status-chip-pending" title="Pending">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  Pending
+                </span>
+              )}
+              {task.status === 'in-progress' && (
+                <span className="icon-chip status-chip-in-progress" title="In Progress">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+                  In Progress
+                </span>
+              )}
+              {task.status === 'review' && (
+                <span className="icon-chip status-chip-review" title="In Review">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  Review
+                </span>
+              )}
+              {task.status === 'done' && (
+                <span className="icon-chip status-chip-done" title="Completed">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                  Done
+                </span>
+              )}
             </div>
-          ))}
-        </div>
-      ) : (
-        <div className="card">
-          <div className="table-wrap">
-            <table>
-              <thead><tr>
-                <th>Task</th><th>Assigned To</th>
-                {canAssign && <th>Assigned By</th>}
-                <th>Priority</th><th>Status</th><th>Due Date</th><th>Actions</th>
-              </tr></thead>
-              <tbody>
-                {filtered.map((task) => (
-                  <tr key={task.id}>
-                    <td>
-                      <div style={{ fontWeight: 600, color: 'var(--neutral-900)' }}>{task.title}</div>
-                      {task.description && <div style={{ fontSize: 12, color: 'var(--neutral-400)', marginTop: 2, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.description}</div>}
-                    </td>
-                    <td>
-                      {task.assigneeIds.slice(0, 2).map(id => getUserName(id)).join(', ')}
-                      {task.assigneeIds.length > 2 && <span style={{ color: 'var(--neutral-400)' }}> (+{task.assigneeIds.length - 2})</span>}
-                    </td>
-                    {canAssign && <td>{getUserName(task.assignedById)}</td>}
-                    <td><span className={`badge badge-${task.priority}`}>{task.priority}</span></td>
-                    <td><span className={`badge badge-${task.status}`}>{task.status.replace('-', ' ')}</span></td>
-                    <td style={{ fontSize: 13, color: 'var(--neutral-500)' }}>{new Date(task.dueDate).toLocaleDateString()}</td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button className="btn btn-outline btn-sm" onClick={() => setModalState({ type: 'detail', task })} title="View">
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                        </button>
-                        {!canAssign && (
-                          <button className="btn btn-outline btn-sm" onClick={() => setModalState({ type: 'status', task })} title="Update status">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                          </button>
-                        )}
-                        {canAssign && (
-                          <button className="btn btn-outline btn-sm" onClick={() => setModalState({ type: 'clone', task })} title="Delegate Task">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M12 11v6"/><path d="M9 14l3 3 3-3"/></svg>
-                          </button>
-                        )}
-                        {canAssign && (
-                          <button className="btn btn-outline btn-sm" onClick={() => setModalState({ type: 'edit', task })} title="Edit">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                          </button>
-                        )}
-                        {(isAdmin || task.assignedById === currentUser.id) && (
-                          <button className="btn btn-danger btn-sm" onClick={() => handleDelete(task.id)} title="Delete">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+            {task.description && (
+              <div className="mobile-icon-card-desc">{task.description}</div>
+            )}
+
+            {/* All Task Details as Icons */}
+            <div className="mobile-details-icon-bar">
+              {/* Priority Icon Chip */}
+              {task.priority === 'critical' && (
+                <span className="icon-chip priority-chip-critical" title="Critical Priority">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                  Critical
+                </span>
+              )}
+              {task.priority === 'high' && (
+                <span className="icon-chip priority-chip-high" title="High Priority">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+                  High
+                </span>
+              )}
+              {task.priority === 'medium' && (
+                <span className="icon-chip priority-chip-medium" title="Medium Priority">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg>
+                  Medium
+                </span>
+              )}
+              {task.priority === 'low' && (
+                <span className="icon-chip priority-chip-low" title="Low Priority">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+                  Low
+                </span>
+              )}
+
+              {/* Due Date Icon */}
+              <span className="icon-chip" title="Due Date">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                  <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
+                {new Date(task.dueDate).toLocaleDateString()}
+              </span>
+
+              {/* Assignees as Icon & Avatars */}
+              <span className="icon-chip" title="Assigned To">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                </svg>
+                {task.assigneeIds.map(id => getUserName(id)).join(', ')}
+              </span>
+
+              {/* Assigner Icon */}
+              {canAssign && (
+                <span className="icon-chip" title="Assigned By">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/>
+                  </svg>
+                  By {getUserName(task.assignedById)}
+                </span>
+              )}
+
+              {/* Notes Count Icon */}
+              {task.notes && task.notes.length > 0 && (
+                <span className="icon-chip icon-chip-info" title="Notes">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                  </svg>
+                  {task.notes.length} note{task.notes.length > 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+
+            {/* Mobile Icon Action Buttons */}
+            <div className="mobile-icon-actions">
+              <button className="mobile-icon-btn" onClick={() => setModalState({ type: 'detail', task })} title="View details" aria-label="View details">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+              {!canAssign && (
+                <button className="mobile-icon-btn" onClick={() => setModalState({ type: 'status', task })} title="Update status" aria-label="Update status">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                </button>
+              )}
+              {canAssign && (
+                <button className="mobile-icon-btn" onClick={() => setModalState({ type: 'clone', task })} title="Delegate task" aria-label="Delegate task">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M12 11v6"/><path d="M9 14l3 3 3-3"/></svg>
+                </button>
+              )}
+              {canAssign && (
+                <button className="mobile-icon-btn" onClick={() => setModalState({ type: 'edit', task })} title="Edit task" aria-label="Edit task">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+              )}
+              {(isAdmin || task.assignedById === currentUser.id) && (
+                <button className="mobile-icon-btn mobile-icon-btn-danger" onClick={() => handleDelete(task.id)} title="Delete task" aria-label="Delete task">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+
+        return filtered.length === 0 ? (
+          <div className="card"><div className="empty-state"><div className="empty-state-icon">📋</div><h3>No tasks found</h3><p>{canAssign ? 'Click "Assign Task" to create one.' : 'No tasks assigned to you yet.'}</p></div></div>
+        ) : (
+          <>
+            {/* Mobile & Tablet Icon View (Always active on mobile and tablet) */}
+            <div className="mobile-only-cards">
+              {filtered.map((task) => renderTaskIconCard(task, 'm'))}
+            </div>
+
+            {/* Desktop Views (Icon View by default, or Table View if toggled) */}
+            <div className="desktop-only-table">
+              {view === 'grid' ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
+                  {filtered.map((task) => renderTaskIconCard(task, 'd'))}
+                </div>
+              ) : (
+                <div className="card">
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr>
+                        <th>Task</th><th>Assigned To</th>
+                        {canAssign && <th>Assigned By</th>}
+                        <th>Priority</th><th>Status</th><th>Due Date</th><th>Actions</th>
+                      </tr></thead>
+                      <tbody>
+                        {filtered.map((task) => (
+                          <tr key={task.id}>
+                            <td>
+                              <div style={{ fontWeight: 600, color: 'var(--neutral-900)' }}>{task.title}</div>
+                              {task.description && <div style={{ fontSize: 12, color: 'var(--neutral-400)', marginTop: 2, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.description}</div>}
+                            </td>
+                            <td>
+                              {task.assigneeIds.slice(0, 2).map(id => getUserName(id)).join(', ')}
+                              {task.assigneeIds.length > 2 && <span style={{ color: 'var(--neutral-400)' }}> (+{task.assigneeIds.length - 2})</span>}
+                            </td>
+                            {canAssign && <td>{getUserName(task.assignedById)}</td>}
+                            <td><span className={`badge badge-${task.priority}`}>{task.priority}</span></td>
+                            <td><span className={`badge badge-${task.status}`}>{task.status.replace('-', ' ')}</span></td>
+                            <td style={{ fontSize: 13, color: 'var(--neutral-500)' }}>{new Date(task.dueDate).toLocaleDateString()}</td>
+                            <td>
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <button className="btn btn-outline btn-sm" onClick={() => setModalState({ type: 'detail', task })} title="View">
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                </button>
+                                {!canAssign && (
+                                  <button className="btn btn-outline btn-sm" onClick={() => setModalState({ type: 'status', task })} title="Update status">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                                  </button>
+                                )}
+                                {canAssign && (
+                                  <button className="btn btn-outline btn-sm" onClick={() => setModalState({ type: 'clone', task })} title="Delegate Task">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M12 11v6"/><path d="M9 14l3 3 3-3"/></svg>
+                                  </button>
+                                )}
+                                {canAssign && (
+                                  <button className="btn btn-outline btn-sm" onClick={() => setModalState({ type: 'edit', task })} title="Edit">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                  </button>
+                                )}
+                                {(isAdmin || task.assignedById === currentUser.id) && (
+                                  <button className="btn btn-danger btn-sm" onClick={() => handleDelete(task.id)} title="Delete">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        );
+      })()}
 
       {/* Modals */}
       {(modalState?.type === 'create' || modalState?.type === 'edit' || modalState?.type === 'clone') && (

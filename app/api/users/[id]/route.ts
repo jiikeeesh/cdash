@@ -3,6 +3,7 @@
 // DELETE /api/users/[id]  → delete user
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/db';
+import { cacheInvalidate } from '@/app/lib/cache';
 
 export async function GET(
   _req: NextRequest,
@@ -54,6 +55,11 @@ export async function PATCH(
         createdAt: true, createdBy: true,
       },
     });
+
+    // Invalidate users and presence cache
+    cacheInvalidate('users');
+    cacheInvalidate('presence');
+
     return NextResponse.json(user);
   } catch (e: any) {
     if (e?.code === 'P2025') return NextResponse.json({ error: 'User not found' }, { status: 404 });
@@ -68,6 +74,11 @@ export async function DELETE(
   try {
     const { id } = await params;
     await prisma.user.delete({ where: { id } });
+
+    // Invalidate users and presence cache
+    cacheInvalidate('users');
+    cacheInvalidate('presence');
+
     return NextResponse.json({ success: true });
   } catch (e: any) {
     if (e?.code === 'P2025') return NextResponse.json({ error: 'User not found' }, { status: 404 });

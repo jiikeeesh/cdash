@@ -135,9 +135,10 @@ export default function UsersPage() {
   const { currentUser } = useAuth();
   const { toasts, push } = useToast();
   const [users, setUsers] = useState<SafeUser[]>([]);
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   const [search, setSearch]     = useState('');
   const [filterRole, setFilterRole] = useState<string>('all');
-  const [view, setView] = useState<'list' | 'grid'>('list');
+  const [view, setView] = useState<'grid' | 'list'>('grid');
   const [modalState, setModalState] = useState<{ type: 'create' } | { type: 'edit'; user: SafeUser } | null>(null);
   const [confirmState, setConfirmState] = useState<{ title: string; message: string; onConfirm: () => void; confirmText?: string; confirmStyle?: 'danger'|'brand'|'warning' } | null>(null);
 
@@ -145,7 +146,24 @@ export default function UsersPage() {
     fetch('/api/users').then((r) => r.json()).then(setUsers).catch(() => {});
   }, []);
 
-  useEffect(() => { loadUsers(); }, [loadUsers]);
+  const loadPresence = useCallback(() => {
+    if (!currentUser) return;
+    fetch(`/api/presence?userId=${currentUser.id}&role=${currentUser.role}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.onlineUsers) {
+          setOnlineUserIds(new Set(data.onlineUsers.map((u: any) => u.id)));
+        }
+      })
+      .catch(() => {});
+  }, [currentUser]);
+
+  useEffect(() => {
+    loadUsers();
+    loadPresence();
+    const interval = setInterval(loadPresence, 10000);
+    return () => clearInterval(interval);
+  }, [loadUsers, loadPresence]);
 
   if (!currentUser || currentUser.role === 'user') return null;
 
@@ -229,12 +247,18 @@ export default function UsersPage() {
           <p className="text-sm text-neutral" style={{ marginTop: 2 }}>{isAdmin ? `${users.length} accounts total` : `${users.filter((u) => u.role === 'user').length} users`}</p>
         </div>
         <div className="flex items-center gap-2">
-          <div style={{ display: 'flex', border: '1.5px solid var(--neutral-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-            {(['list', 'grid'] as const).map((v) => (
-              <button key={v} onClick={() => setView(v)} style={{ padding: '7px 12px', border: 'none', background: view === v ? 'var(--brand-600)' : 'white', color: view === v ? 'white' : 'var(--neutral-500)', cursor: 'pointer', transition: 'all .2s' }}>
-                {v === 'list'
-                  ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-                  : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>}
+          <div className="view-toggle-group" style={{ display: 'flex', border: '1.5px solid var(--neutral-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+            {(['grid', 'list'] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                style={{ padding: '7px 12px', border: 'none', background: view === v ? 'var(--brand-600)' : 'var(--neutral-0)', color: view === v ? 'white' : 'var(--neutral-500)', cursor: 'pointer', transition: 'all .2s' }}
+                title={v === 'grid' ? 'Icon View' : 'Table View'}
+                aria-label={v === 'grid' ? 'Icon View' : 'Table View'}
+              >
+                {v === 'grid'
+                  ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                  : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>}
               </button>
             ))}
           </div>
@@ -275,108 +299,230 @@ export default function UsersPage() {
 
       {filtered.length === 0 ? (
         <div className="card"><div className="empty-state"><div className="empty-state-icon">👥</div><h3>No accounts found</h3><p>Click "Create Account" to add one.</p></div></div>
-      ) : view === 'grid' ? (
-        <div className="task-grid">
-          {filtered.map((u) => (
-            <div key={u.id} className="task-card" style={{ cursor: 'default' }}>
-              <div className="task-card-header">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div className="sidebar-avatar" style={{ width: 34, height: 34, fontSize: 12 }}>
-                    {u.fullName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)}
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: 600, color: 'var(--neutral-900)' }}>{u.fullName}</div>
-                    <div style={{ fontSize: 12, color: 'var(--neutral-400)' }}>@{u.username}</div>
-                  </div>
-                </div>
-                <span className={`badge badge-${u.role}`} style={{ flexShrink: 0 }}>{u.role}</span>
-              </div>
-              <div className="task-card-desc" style={{ marginTop: 12, fontSize: 13, color: 'var(--neutral-600)' }}>
-                <div><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6, display: 'inline', verticalAlign: 'text-bottom' }}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>{u.email}</div>
-                {u.phone && <div style={{ marginTop: 4 }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6, display: 'inline', verticalAlign: 'text-bottom' }}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>{u.phone}</div>}
-              </div>
-              <div className="task-card-meta" style={{ marginTop: 16 }}>
-                <span style={{ fontSize: 12 }}>{u.department || 'No department'}</span>
-                {u.isFirstLogin ? <span className="badge badge-review" style={{ fontSize: 11 }}>Pending Setup</span> : <span className="badge badge-done" style={{ fontSize: 11 }}>Active</span>}
-              </div>
-              <div className="divider" style={{ margin: '12px 0' }} />
-              <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                {(isAdmin || (isModerator && u.role === 'user')) && (
-                  <>
-                    <button className="btn btn-outline btn-sm" onClick={() => setModalState({ type: 'edit', user: u })} title="Edit">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                    </button>
-                    <button className="btn btn-outline btn-sm" onClick={() => handleResetPassword(u)} title="Reset password" style={{ color: 'var(--warning)', borderColor: 'var(--warning)' }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
-                    </button>
-                  </>
-                )}
-                {isAdmin && u.id !== currentUser.id && (
-                  <button className="btn btn-danger btn-sm" onClick={() => handleDelete(u)} title="Delete">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
       ) : (
-        <div className="card">
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>User</th><th>Contact Details</th><th>Username</th><th>Department</th><th>Role</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
-              <tbody>
-                {filtered.map((u) => (
-                  <tr key={u.id}>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div className="sidebar-avatar" style={{ width: 34, height: 34, fontSize: 12 }}>
-                          {u.fullName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)}
-                        </div>
-                        <div>
-                          <div style={{ fontWeight: 600, color: 'var(--neutral-900)' }}>{u.fullName}</div>
-                          <div style={{ fontSize: 12, color: 'var(--neutral-400)' }}>{u.email}</div>
-                        </div>
+        <>
+          {(() => {
+            const renderUserIconCard = (u: SafeUser, keyPrefix: string) => {
+              const isOnline = onlineUserIds.has(u.id);
+              return (
+              <div key={`${keyPrefix}-${u.id}`} className="mobile-icon-card">
+                <div className="mobile-icon-card-header">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ position: 'relative' }}>
+                      <div className="sidebar-avatar" style={{ width: 36, height: 36, fontSize: 13 }}>
+                        {u.fullName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)}
                       </div>
-                    </td>
-                    <td>
-                      <div style={{ fontSize: 12, color: 'var(--neutral-600)' }}>{u.phone || '—'}</div>
-                      <div style={{ fontSize: 12, color: 'var(--neutral-600)' }}>{u.address || '—'}</div>
-                    </td>
-                    <td style={{ fontFamily: 'monospace', fontSize: 13 }}>@{u.username}</td>
-                    <td style={{ fontSize: 13, color: 'var(--neutral-600)' }}>{u.department || '—'}</td>
-                    <td><span className={`badge badge-${u.role}`}>{u.role}</span></td>
-                    <td>{u.isFirstLogin ? <span className="badge badge-review">Pending Setup</span> : <span className="badge badge-done">Active</span>}</td>
-                    <td style={{ fontSize: 12, color: 'var(--neutral-400)' }}>
-                      <div>{new Date(u.createdAt).toLocaleDateString()}</div>
-                      <div>{new Date(u.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        {(isAdmin || (isModerator && u.role === 'user')) && (
-                          <>
-                            <button className="btn btn-outline btn-sm" onClick={() => setModalState({ type: 'edit', user: u })} title="Edit">
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                            </button>
-                            <button className="btn btn-outline btn-sm" onClick={() => handleResetPassword(u)} title="Reset password" style={{ color: 'var(--warning)', borderColor: 'var(--warning)' }}>
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
-                            </button>
-                          </>
-                        )}
-                        {isAdmin && u.id !== currentUser.id && (
-                          <button className="btn btn-danger btn-sm" onClick={() => handleDelete(u)} title="Delete">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      {isOnline && (
+                        <span className="presence-pulse-dot-sm" title="Online Now" />
+                      )}
+                    </div>
+                    <div>
+                      <div className="mobile-icon-card-title">{u.fullName}</div>
+                      <div style={{ fontSize: 12, color: 'var(--neutral-400)' }}>@{u.username}</div>
+                    </div>
+                  </div>
+                  {/* Status as Icon */}
+                  {isOnline ? (
+                    <span className="icon-chip icon-chip-success" title="Online Now" style={{ borderColor: 'var(--success)', background: 'var(--success-light)', color: 'var(--success-dark)', fontWeight: 600 }}>
+                      <span className="presence-pulse-dot" style={{ width: 7, height: 7 }} />
+                      Online
+                    </span>
+                  ) : u.isFirstLogin ? (
+                    <span className="icon-chip icon-chip-warning" title="Pending Setup">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      Setup
+                    </span>
+                  ) : (
+                    <span className="icon-chip" title="Offline" style={{ opacity: 0.8 }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
+                      Offline
+                    </span>
+                  )}
+                </div>
+
+                {/* All User Details as Icons */}
+                <div className="mobile-details-icon-bar">
+                  {/* Role Icon */}
+                  {u.role === 'admin' && (
+                    <span className="icon-chip icon-chip-error" title="Admin">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                      Admin
+                    </span>
+                  )}
+                  {u.role === 'moderator' && (
+                    <span className="icon-chip icon-chip-warning" title="Moderator">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                      Moderator
+                    </span>
+                  )}
+                  {u.role === 'user' && (
+                    <span className="icon-chip icon-chip-brand" title="User">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                      User
+                    </span>
+                  )}
+
+                  {/* Email as clickable Icon */}
+                  <a href={`mailto:${u.email}`} className="icon-chip icon-chip-link" title="Send Email">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                      <polyline points="22,6 12,13 2,6"/>
+                    </svg>
+                    {u.email}
+                  </a>
+
+                  {/* Phone as clickable Icon */}
+                  {u.phone && (
+                    <a href={`tel:${u.phone}`} className="icon-chip icon-chip-link" title="Call Phone">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+                      </svg>
+                      {u.phone}
+                    </a>
+                  )}
+
+                  {/* Department Icon */}
+                  <span className="icon-chip" title="Department">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="2" y="7" width="20" height="14" rx="2"/>
+                      <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+                    </svg>
+                    {u.department || 'General'}
+                  </span>
+
+                  {/* Address Icon */}
+                  {u.address && (
+                    <span className="icon-chip" title="Address">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+                      </svg>
+                      {u.address}
+                    </span>
+                  )}
+
+                  {/* Created Date Icon */}
+                  <span className="icon-chip" title="Account Created">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    {new Date(u.createdAt).toLocaleDateString()}
+                  </span>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="mobile-icon-actions">
+                  {(isAdmin || (isModerator && u.role === 'user')) && (
+                    <>
+                      <button className="mobile-icon-btn" onClick={() => setModalState({ type: 'edit', user: u })} title="Edit Account" aria-label="Edit Account">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      </button>
+                      <button className="mobile-icon-btn" onClick={() => handleResetPassword(u)} title="Reset Password" aria-label="Reset Password" style={{ color: 'var(--warning)', borderColor: 'var(--warning)' }}>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+                      </button>
+                    </>
+                  )}
+                  {isAdmin && u.id !== currentUser.id && (
+                    <button className="mobile-icon-btn mobile-icon-btn-danger" onClick={() => handleDelete(u)} title="Delete Account" aria-label="Delete Account">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          };
+
+            return (
+              <>
+                {/* Mobile / Tablet Icon Cards View (Shown on screens <= 1024px instead of table) */}
+                <div className="mobile-only-cards">
+                  {filtered.map((u) => renderUserIconCard(u, 'm'))}
+                </div>
+
+                {/* Desktop Views (Icon Grid or Table) */}
+                <div className="desktop-only-table">
+                  {view === 'grid' ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14 }}>
+                      {filtered.map((u) => renderUserIconCard(u, 'd'))}
+                    </div>
+                  ) : (
+              <div className="card">
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>User</th><th>Contact Details</th><th>Username</th><th>Department</th><th>Role</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
+                    <tbody>
+                      {filtered.map((u) => (
+                        <tr key={u.id}>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <div style={{ position: 'relative' }}>
+                                <div className="sidebar-avatar" style={{ width: 34, height: 34, fontSize: 12 }}>
+                                  {u.fullName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)}
+                                </div>
+                                {onlineUserIds.has(u.id) && (
+                                  <span className="presence-pulse-dot-sm" title="Online Now" />
+                                )}
+                              </div>
+                              <div>
+                                <div style={{ fontWeight: 600, color: 'var(--neutral-900)' }}>{u.fullName}</div>
+                                <div style={{ fontSize: 12, color: 'var(--neutral-400)' }}>{u.email}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <div style={{ fontSize: 12, color: 'var(--neutral-600)' }}>{u.phone || '—'}</div>
+                            <div style={{ fontSize: 12, color: 'var(--neutral-600)' }}>{u.address || '—'}</div>
+                          </td>
+                          <td style={{ fontFamily: 'monospace', fontSize: 13 }}>@{u.username}</td>
+                          <td style={{ fontSize: 13, color: 'var(--neutral-600)' }}>{u.department || '—'}</td>
+                          <td><span className={`badge badge-${u.role}`}>{u.role}</span></td>
+                          <td>
+                            {onlineUserIds.has(u.id) ? (
+                              <span className="badge badge-done" style={{ fontWeight: 700, gap: 5 }}>
+                                <span className="presence-pulse-dot" style={{ width: 6, height: 6 }} />
+                                Online
+                              </span>
+                            ) : u.isFirstLogin ? (
+                              <span className="badge badge-review">Pending Setup</span>
+                            ) : (
+                              <span className="badge" style={{ background: 'var(--neutral-100)', color: 'var(--neutral-500)', fontSize: 11 }}>Offline</span>
+                            )}
+                          </td>
+                          <td style={{ fontSize: 12, color: 'var(--neutral-400)' }}>
+                            <div>{new Date(u.createdAt).toLocaleDateString()}</div>
+                            <div>{new Date(u.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              {(isAdmin || (isModerator && u.role === 'user')) && (
+                                <>
+                                  <button className="btn btn-outline btn-sm" onClick={() => setModalState({ type: 'edit', user: u })} title="Edit">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                  </button>
+                                  <button className="btn btn-outline btn-sm" onClick={() => handleResetPassword(u)} title="Reset password" style={{ color: 'var(--warning)', borderColor: 'var(--warning)' }}>
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+                                  </button>
+                                </>
+                              )}
+                              {isAdmin && u.id !== currentUser.id && (
+                                <button className="btn btn-danger btn-sm" onClick={() => handleDelete(u)} title="Delete">
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        </>
+      );
+    })()}
+  </>
+)}
 
       {modalState && (
         <UserModal user={modalState.type === 'edit' ? modalState.user : null}
