@@ -1159,6 +1159,7 @@ export default function UsersPage() {
   const { toasts, push } = useToast();
   const [users, setUsers] = useState<SafeUser[]>([]);
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+  const [userStatusMap, setUserStatusMap] = useState<Record<string, string>>({});
   const [activeMainTab, setActiveMainTab] = useState<'directory' | 'moderators' | 'requests'>('directory');
   const [search, setSearch]     = useState('');
   const [filterRole, setFilterRole] = useState<string>('all');
@@ -1176,6 +1177,23 @@ export default function UsersPage() {
   const [assigningModerator, setAssigningModerator] = useState<SafeUser | null>(null);
   const [confirmState, setConfirmState] = useState<{ title: string; message: string; onConfirm: () => void; confirmText?: string; confirmStyle?: 'danger'|'brand'|'warning' } | null>(null);
   const [resetSuccessUser, setResetSuccessUser] = useState<{ user: SafeUser; password: string } | null>(null);
+
+  const getStatusDisplay = (userId: string) => {
+    const st = userStatusMap[userId] || 'active';
+    switch (st) {
+      case 'away':
+        return { label: 'Away', dotClass: 'status-dot-away', color: '#92400e', bg: 'rgba(245, 158, 11, 0.12)', borderColor: 'var(--warning)' };
+      case 'busy':
+        return { label: 'Busy', dotClass: 'status-dot-busy', color: '#991b1b', bg: 'rgba(239, 68, 68, 0.12)', borderColor: 'var(--error)' };
+      case 'dnd':
+        return { label: 'DND', dotClass: 'status-dot-dnd', color: '#881337', bg: 'rgba(225, 29, 72, 0.12)', borderColor: '#e11d48' };
+      case 'ooo':
+        return { label: 'Out of Office', dotClass: 'status-dot-ooo', color: '#5b21b6', bg: 'rgba(139, 92, 246, 0.12)', borderColor: '#8b5cf6' };
+      case 'active':
+      default:
+        return { label: 'Active', dotClass: 'status-dot-active', color: 'var(--success-dark)', bg: 'var(--success-light)', borderColor: 'var(--success)' };
+    }
+  };
 
   const loadUsers = useCallback(() => {
     fetch('/api/users')
@@ -1200,6 +1218,11 @@ export default function UsersPage() {
             if (prevIds === newIds) return prev;
             return new Set(data.onlineUsers.map((u: any) => u.id));
           });
+          const statusMap: Record<string, string> = {};
+          (data.onlineUsers as any[]).forEach((u: any) => {
+            statusMap[u.id] = u.status || 'active';
+          });
+          setUserStatusMap(statusMap);
         }
       })
       .catch(() => {});
@@ -1624,6 +1647,7 @@ export default function UsersPage() {
               {(() => {
                 const renderUserIconCard = (u: SafeUser, keyPrefix: string) => {
                   const isOnline = onlineUserIds.has(u.id);
+                  const statusInfo = isOnline ? getStatusDisplay(u.id) : null;
                   return (
                   <div key={`${keyPrefix}-${u.id}`} className="mobile-icon-card">
                     <div className="mobile-icon-card-header">
@@ -1632,8 +1656,8 @@ export default function UsersPage() {
                           <div className="sidebar-avatar" style={{ width: 36, height: 36, fontSize: 13 }}>
                             {u.fullName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)}
                           </div>
-                          {isOnline && (
-                            <span className="presence-pulse-dot-sm" title="Online Now" />
+                          {isOnline && statusInfo && (
+                            <span className={`status-avatar-badge ${statusInfo.dotClass}`} title={statusInfo.label} />
                           )}
                         </div>
                         <div>
@@ -1642,10 +1666,10 @@ export default function UsersPage() {
                         </div>
                       </div>
                       {/* Status as Icon */}
-                      {isOnline ? (
-                        <span className="icon-chip icon-chip-success" title="Online Now" style={{ borderColor: 'var(--success)', background: 'var(--success-light)', color: 'var(--success-dark)', fontWeight: 600 }}>
-                          <span className="presence-pulse-dot" style={{ width: 7, height: 7 }} />
-                          Online
+                      {isOnline && statusInfo ? (
+                        <span className="icon-chip" title={statusInfo.label} style={{ borderColor: statusInfo.borderColor, background: statusInfo.bg, color: statusInfo.color, fontWeight: 600 }}>
+                          <span className={`status-indicator-dot ${statusInfo.dotClass}`} style={{ width: 7, height: 7 }} />
+                          {statusInfo.label}
                         </span>
                       ) : u.isFirstLogin ? (
                         <span className="icon-chip icon-chip-warning" title="Pending Setup">
@@ -1773,7 +1797,10 @@ export default function UsersPage() {
                             <table>
                               <thead><tr><th>User</th><th>Contact Details</th><th>Username</th><th>Department</th><th>Role</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
                               <tbody>
-                                {filtered.map((u) => (
+                                {filtered.map((u) => {
+                                  const isOnline = onlineUserIds.has(u.id);
+                                  const statusInfo = isOnline ? getStatusDisplay(u.id) : null;
+                                  return (
                                   <tr key={u.id}>
                                     <td>
                                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1781,8 +1808,8 @@ export default function UsersPage() {
                                           <div className="sidebar-avatar" style={{ width: 34, height: 34, fontSize: 12 }}>
                                             {u.fullName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)}
                                           </div>
-                                          {onlineUserIds.has(u.id) && (
-                                            <span className="presence-pulse-dot-sm" title="Online Now" />
+                                          {isOnline && statusInfo && (
+                                            <span className={`status-avatar-badge ${statusInfo.dotClass}`} title={statusInfo.label} />
                                           )}
                                         </div>
                                         <div>
@@ -1799,10 +1826,10 @@ export default function UsersPage() {
                                     <td style={{ fontSize: 13, color: 'var(--neutral-600)' }}>{u.department || '—'}</td>
                                     <td><span className={`badge badge-${u.role}`}>{u.role}</span></td>
                                     <td>
-                                      {onlineUserIds.has(u.id) ? (
-                                        <span className="badge badge-done" style={{ fontWeight: 700, gap: 5 }}>
-                                          <span className="presence-pulse-dot" style={{ width: 6, height: 6 }} />
-                                          Online
+                                      {isOnline && statusInfo ? (
+                                        <span className="badge" style={{ fontWeight: 700, gap: 5, background: statusInfo.bg, color: statusInfo.color, border: `1px solid ${statusInfo.borderColor}` }}>
+                                          <span className={`status-indicator-dot ${statusInfo.dotClass}`} style={{ width: 6, height: 6 }} />
+                                          {statusInfo.label}
                                         </span>
                                       ) : u.isFirstLogin ? (
                                         <span className="badge badge-review">Pending Setup</span>
@@ -1834,7 +1861,8 @@ export default function UsersPage() {
                                       </div>
                                     </td>
                                   </tr>
-                                ))}
+                                );
+                              })}
                               </tbody>
                             </table>
                           </div>

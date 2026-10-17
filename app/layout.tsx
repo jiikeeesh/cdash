@@ -22,6 +22,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={geist.variable} suppressHydrationWarning>
       <head>
         <script
+          id="theme-initializer"
+          suppressHydrationWarning
           dangerouslySetInnerHTML={{
             __html: `
               (function() {

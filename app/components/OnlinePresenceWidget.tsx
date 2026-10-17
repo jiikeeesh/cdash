@@ -11,6 +11,7 @@ export interface PresenceUser {
   department: string;
   isOnline: boolean;
   lastActive: number | null;
+  status?: 'active' | 'away' | 'busy' | 'dnd' | 'ooo' | 'offline';
 }
 
 export default function OnlinePresenceWidget() {
@@ -85,7 +86,7 @@ export default function OnlinePresenceWidget() {
                 padding: '2px 8px',
                 borderRadius: 20,
               }}>
-                <span className="presence-pulse-dot" />
+                <span className="presence-pulse-dot-inline" />
                 {onlineUsers.length} Online
               </span>
             </div>
@@ -123,6 +124,16 @@ export default function OnlinePresenceWidget() {
               }}>
                 {onlineUsers.map((u) => {
                   const initials = u.fullName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
+                  const st = u.status || 'active';
+                  const statusInfo = {
+                    active: { label: 'Active', dotClass: 'status-dot-active', borderColor: 'var(--success)', bg: 'rgba(16, 185, 129, 0.08)' },
+                    away: { label: 'Away', dotClass: 'status-dot-away', borderColor: 'var(--warning)', bg: 'rgba(245, 158, 11, 0.08)' },
+                    busy: { label: 'Busy', dotClass: 'status-dot-busy', borderColor: 'var(--error)', bg: 'rgba(239, 68, 68, 0.08)' },
+                    dnd: { label: 'DND', dotClass: 'status-dot-dnd', borderColor: '#e11d48', bg: 'rgba(225, 29, 72, 0.08)' },
+                    ooo: { label: 'Out of Office', dotClass: 'status-dot-ooo', borderColor: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.08)' },
+                    offline: { label: 'Offline', dotClass: 'status-dot-offline', borderColor: 'var(--neutral-300)', bg: 'var(--neutral-100)' },
+                  }[st];
+
                   return (
                     <div
                       key={u.id}
@@ -130,8 +141,8 @@ export default function OnlinePresenceWidget() {
                         padding: '12px 14px',
                         borderRadius: 'var(--radius-md)',
                         background: 'var(--bg-surface)',
-                        border: '1.5px solid var(--success)',
-                        boxShadow: '0 2px 8px rgba(16, 185, 129, 0.12)',
+                        border: `1.5px solid ${statusInfo.borderColor}`,
+                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
@@ -143,19 +154,7 @@ export default function OnlinePresenceWidget() {
                           <div className="sidebar-avatar" style={{ width: 36, height: 36, fontSize: 13 }}>
                             {initials}
                           </div>
-                          <span
-                            style={{
-                              position: 'absolute',
-                              bottom: -1,
-                              right: -1,
-                              width: 11,
-                              height: 11,
-                              borderRadius: '50%',
-                              background: '#10b981',
-                              border: '2px solid var(--bg-surface)',
-                              boxShadow: '0 0 6px #10b981',
-                            }}
-                          />
+                          <span className={`status-avatar-badge ${statusInfo.dotClass}`} />
                         </div>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--neutral-900)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -169,9 +168,13 @@ export default function OnlinePresenceWidget() {
                         </div>
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
                         <span className={`badge badge-${u.role}`} style={{ fontSize: 10, padding: '2px 7px' }}>
                           {u.role}
+                        </span>
+                        <span style={{ fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 600, color: 'var(--neutral-600)' }}>
+                          <span className={`status-indicator-dot ${statusInfo.dotClass}`} style={{ width: 6, height: 6 }} />
+                          {statusInfo.label}
                         </span>
                       </div>
                     </div>

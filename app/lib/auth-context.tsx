@@ -30,23 +30,8 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const SESSION_KEY = 'cdash_session';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<SafeUser | null>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = sessionStorage.getItem(SESSION_KEY);
-        if (stored) return JSON.parse(stored) as SafeUser;
-      } catch {
-        sessionStorage.removeItem(SESSION_KEY);
-      }
-    }
-    return null;
-  });
-  const [loading, setLoading] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return false;
-    }
-    return true;
-  });
+  const [currentUser, setCurrentUser] = useState<SafeUser | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
 
   // Restore session / sync on mount
   useEffect(() => {
@@ -57,8 +42,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch {
       sessionStorage.removeItem(SESSION_KEY);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   const login = useCallback(async (

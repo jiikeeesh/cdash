@@ -64,6 +64,25 @@ const navItems: NavItem[] = [
   },
 ];
 
+import { UserPresenceStatus } from '../lib/presence';
+
+export interface StatusItem {
+  id: UserPresenceStatus;
+  label: string;
+  badge: string;
+  desc: string;
+  dotClass: string;
+  emoji: string;
+}
+
+export const STATUS_OPTIONS: StatusItem[] = [
+  { id: 'active', label: 'Live / Active', badge: 'Active', desc: 'Online and working', dotClass: 'status-dot-active', emoji: '🟢' },
+  { id: 'away', label: 'Away', badge: 'Away', desc: 'Stepped away temporarily', dotClass: 'status-dot-away', emoji: '🟡' },
+  { id: 'busy', label: 'Busy', badge: 'Busy', desc: 'In focused work / meeting', dotClass: 'status-dot-busy', emoji: '🔴' },
+  { id: 'dnd', label: 'Do Not Disturb', badge: 'DND', desc: 'Mute alerts & notifications', dotClass: 'status-dot-dnd', emoji: '⛔' },
+  { id: 'ooo', label: 'Out of Office', badge: 'Out of Office', desc: 'Vacation, sick leave, travel', dotClass: 'status-dot-ooo', emoji: '🟣' },
+];
+
 function roleBadgeClass(role: Role) {
   return `sidebar-role-badge role-badge-${role}`;
 }
@@ -79,6 +98,59 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [isProfileSheetOpen, setIsProfileSheetOpen] = useState(false);
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
   const [onlineCount, setOnlineCount] = useState(0);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // User presence status (live/active, away, busy, dnd, out of office)
+  const [userStatus, setUserStatusState] = useState<UserPresenceStatus>('active');
+  const [isStatusMenuOpen, setIsStatusMenuOpen] = useState(false);
+  const statusMenuRef = useRef<HTMLDivElement>(null);
+
+  // Restore saved status on client mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('cdash_user_status') as UserPresenceStatus | null;
+      if (saved && STATUS_OPTIONS.some((s) => s.id === saved)) {
+        setUserStatusState(saved);
+      }
+    }
+  }, []);
+
+  // Close status dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (statusMenuRef.current && !statusMenuRef.current.contains(e.target as Node)) {
+        setIsStatusMenuOpen(false);
+      }
+    }
+    if (isStatusMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isStatusMenuOpen]);
+
+  // Handle status update
+  const handleStatusChange = async (newStatus: UserPresenceStatus) => {
+    setUserStatusState(newStatus);
+    setIsStatusMenuOpen(false);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('cdash_user_status', newStatus);
+    }
+    if (currentUser) {
+      try {
+        await fetch('/api/presence', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: currentUser.id, status: newStatus }),
+        });
+      } catch (e) {}
+    }
+  };
+
+  const currentStatusConfig = STATUS_OPTIONS.find((s) => s.id === userStatus) || STATUS_OPTIONS[0];
 
   // Apply user's database-persisted theme preferences on mount/login across any device
   useEffect(() => {
@@ -97,6 +169,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     setIsSidebarOpen(false);
     setIsProfileSheetOpen(false);
+    setIsStatusMenuOpen(false);
   }, [pathname]);
 
   // Presence heartbeat & online count polling
@@ -108,10 +181,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         await fetch('/api/presence', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: currentUser.id }),
+          body: JSON.stringify({ userId: currentUser.id, status: userStatus }),
         });
 
-        const res = await fetch(`/api/presence?userId=${currentUser.id}&role=${currentUser.role}`);
+        const res = await fetch(`/api/presence?userId=${currentUser.id}&role=${currentUser.role}&status=${userStatus}`);
         if (res.ok) {
           const data = await res.json();
           const count = data.totalOnline || 0;
@@ -123,7 +196,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     pingAndFetchPresence();
     const interval = setInterval(pingAndFetchPresence, 20000); // 20s heartbeat
     return () => clearInterval(interval);
-  }, [currentUser]);
+  }, [currentUser, userStatus]);
 
   // Poll for pending requests count (admin/moderator)
   useEffect(() => {
@@ -148,15 +221,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [currentUser]);
 
   useEffect(() => {
-    if (loading) return; // Do not redirect while session is hydrating
+    if (!mounted || loading) return; // Do not redirect while session is hydrating
     if (!currentUser) {
       router.replace('/login');
     } else if (currentUser.isFirstLogin) {
       router.replace('/change-password');
     }
-  }, [currentUser, loading, router]);
+  }, [currentUser, loading, mounted, router]);
 
-  if (loading || !currentUser) {
+  if (!mounted || loading || !currentUser) {
     return (
       <div className="page-redirect">
         <div className="spinner spinner-dark" />
@@ -216,10 +289,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* User info */}
         <div className="sidebar-user">
-          <div className="sidebar-avatar">{initials}</div>
+          <div style={{ position: 'relative', display: 'inline-flex' }}>
+            <div className="sidebar-avatar">{initials}</div>
+            <span className={`status-avatar-badge ${currentStatusConfig.dotClass}`} />
+          </div>
           <div className="sidebar-user-info">
             <div className="sidebar-user-name">{currentUser.fullName}</div>
-            <span className={roleBadgeClass(currentUser.role as Role)}>{currentUser.role}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+              <span className={roleBadgeClass(currentUser.role as Role)}>{currentUser.role}</span>
+              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <span className={`status-indicator-dot ${currentStatusConfig.dotClass}`} style={{ width: 6, height: 6 }} />
+                {currentStatusConfig.badge}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -295,6 +377,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   className="topbar-btn-ghost"
                   title={currentUser.role === 'admin' ? `${onlineCount} team members online across the company` : `${onlineCount} of your assigned users are currently online`}
                   style={{
+                    position: 'relative',
                     padding: '6px 12px',
                     display: 'flex',
                     alignItems: 'center',
@@ -309,7 +392,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     cursor: 'pointer',
                   }}
                 >
-                  <span className="presence-pulse-dot" />
+                  <span className="presence-pulse-dot-inline" />
                   <span>{onlineCount} Online</span>
                 </Link>
               )}
@@ -397,37 +480,140 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
               <div style={{ width: 1, height: 22, background: 'var(--neutral-200)', margin: '0 4px' }} />
 
-              <div style={{ fontSize: 13, color: 'var(--neutral-500)' }}>
-                Hi, <strong style={{ color: 'var(--neutral-800)' }}>{currentUser.fullName.split(' ')[0]}</strong>
-              </div>
-              <div className="sidebar-avatar" style={{ width: 34, height: 34, fontSize: 12 }}>{initials}</div>
+              {/* User Profile & Interactive Status Menu (Replaces redundant Sign out in topbar) */}
+              <div ref={statusMenuRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ fontSize: 13, color: 'var(--neutral-500)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span>Hi,</span> <strong style={{ color: 'var(--neutral-800)' }}>{currentUser.fullName.split(' ')[0]}</strong>
+                </div>
 
-              {/* Topbar Quick Sign Out */}
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="topbar-btn-ghost"
-                title="Sign out"
-                style={{
-                  padding: '6px 10px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  borderRadius: 'var(--radius-md)',
-                  cursor: 'pointer',
-                  color: 'var(--error)',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  border: '1px solid var(--error-light)',
-                  background: 'rgba(239, 68, 68, 0.05)',
-                  marginLeft: 4,
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
-                </svg>
-                <span>Sign out</span>
-              </button>
+                {/* Avatar with Status Badge */}
+                <div 
+                  onClick={() => setIsStatusMenuOpen((prev) => !prev)}
+                  style={{ position: 'relative', cursor: 'pointer', display: 'inline-flex' }}
+                  title="Click to view profile & change status"
+                >
+                  <div className="sidebar-avatar" style={{ width: 34, height: 34, fontSize: 12 }}>
+                    {initials}
+                  </div>
+                  <span className={`status-avatar-badge ${currentStatusConfig.dotClass}`} />
+                </div>
+
+                {/* Status Trigger Pill */}
+                <button
+                  type="button"
+                  onClick={() => setIsStatusMenuOpen((prev) => !prev)}
+                  className="topbar-status-pill"
+                  title="Change your status"
+                  aria-expanded={isStatusMenuOpen}
+                >
+                  <span className={`status-indicator-dot ${currentStatusConfig.dotClass}`} />
+                  <span>{currentStatusConfig.badge}</span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ transform: isStatusMenuOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }}>
+                    <path d="M6 9l6 6 6-6"/>
+                  </svg>
+                </button>
+
+                {/* Status & Profile Dropdown Menu */}
+                {isStatusMenuOpen && (
+                  <div className="profile-popover-menu" role="dialog" aria-label="User Status and Profile Menu">
+                    {/* User Mini Card */}
+                    <div style={{ padding: '8px 10px 10px', borderBottom: '1px solid var(--neutral-100)', marginBottom: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ position: 'relative' }}>
+                          <div className="sidebar-avatar" style={{ width: 34, height: 34, fontSize: 12 }}>
+                            {initials}
+                          </div>
+                          <span className={`status-avatar-badge ${currentStatusConfig.dotClass}`} />
+                        </div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--neutral-900)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {currentUser.fullName}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                            <span className={roleBadgeClass(currentUser.role as Role)} style={{ fontSize: 9, padding: '1px 6px' }}>
+                              {currentUser.role}
+                            </span>
+                            <span style={{ fontSize: 11, color: 'var(--neutral-400)' }}>@{currentUser.username}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Status Options Title */}
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--neutral-400)', textTransform: 'uppercase', letterSpacing: '0.6px', padding: '4px 10px 6px' }}>
+                      Set Your Status
+                    </div>
+
+                    {/* Status Options List */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {STATUS_OPTIONS.map((opt) => {
+                        const isSelected = userStatus === opt.id;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => handleStatusChange(opt.id)}
+                            className={`status-option-item ${isSelected ? 'active' : ''}`}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                              <span className={`status-indicator-dot ${opt.dotClass}`} style={{ width: 10, height: 10 }} />
+                              <div>
+                                <div style={{ fontSize: 12, fontWeight: isSelected ? 700 : 500 }}>
+                                  {opt.label}
+                                </div>
+                                <div style={{ fontSize: 11, color: 'var(--neutral-400)', marginTop: 1 }}>
+                                  {opt.desc}
+                                </div>
+                              </div>
+                            </div>
+                            {isSelected && (
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" color="var(--brand-600)">
+                                <polyline points="20 6 9 17 4 12"/>
+                              </svg>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Divider */}
+                    <div style={{ height: 1, background: 'var(--neutral-100)', margin: '6px 0' }} />
+
+                    {/* Quick Settings Item */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsStatusMenuOpen(false);
+                        setIsThemeModalOpen(true);
+                      }}
+                      className="status-option-item"
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7z"/></svg>
+                        <span>Workspace Theme & Colors</span>
+                      </div>
+                    </button>
+
+                    {/* Sign out inside menu */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsStatusMenuOpen(false);
+                        handleLogout();
+                      }}
+                      className="status-option-item"
+                      style={{ color: 'var(--error)' }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600 }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
+                        </svg>
+                        <span>Sign out</span>
+                      </div>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -620,6 +806,48 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                       {currentUser.role}
                     </span>
                   </div>
+                </div>
+              </div>
+
+              {/* Mobile Status Selector */}
+              <div style={{
+                background: 'var(--neutral-100)',
+                borderRadius: 'var(--radius-lg)',
+                padding: '12px 14px',
+                marginBottom: 16,
+                border: '1px solid var(--neutral-200)',
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--neutral-400)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 8 }}>
+                  Your Current Status
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                  {STATUS_OPTIONS.map((opt) => {
+                    const isSelected = userStatus === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => handleStatusChange(opt.id)}
+                        style={{
+                          padding: '8px 10px',
+                          borderRadius: 'var(--radius-md)',
+                          border: isSelected ? '1.5px solid var(--brand-600)' : '1px solid var(--neutral-300)',
+                          background: isSelected ? 'var(--brand-50, rgba(99, 102, 241, 0.1))' : 'var(--bg-surface)',
+                          color: isSelected ? 'var(--brand-600)' : 'var(--neutral-700)',
+                          fontSize: 12,
+                          fontWeight: isSelected ? 700 : 500,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 7,
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <span className={`status-indicator-dot ${opt.dotClass}`} style={{ width: 8, height: 8 }} />
+                        <span>{opt.badge}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

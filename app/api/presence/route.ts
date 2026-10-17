@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/db';
-import { touchPresence, removePresence, isUserOnline, getLastActive } from '@/app/lib/presence';
+import { touchPresence, removePresence, isUserOnline, getLastActive, setUserStatus, getUserStatus, UserPresenceStatus } from '@/app/lib/presence';
 import { cacheGet, cacheSet } from '@/app/lib/cache';
 
-// POST /api/presence -> Heartbeat ping / logout notification
+// POST /api/presence -> Heartbeat ping / status update / logout notification
 export async function POST(req: NextRequest) {
   try {
     const data = await req.json();
-    const { userId, action } = data;
+    const { userId, action, status } = data;
 
     if (!userId) {
       return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
@@ -15,11 +15,13 @@ export async function POST(req: NextRequest) {
 
     if (action === 'logout') {
       removePresence(userId);
+    } else if (status) {
+      setUserStatus(userId, status as UserPresenceStatus);
     } else {
       touchPresence(userId);
     }
 
-    return NextResponse.json({ success: true, timestamp: Date.now() });
+    return NextResponse.json({ success: true, status: getUserStatus(userId), timestamp: Date.now() });
   } catch (e) {
     return NextResponse.json({ error: 'Failed to record presence' }, { status: 500 });
   }
@@ -33,13 +35,18 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get('userId');
     const role = searchParams.get('role');
+    const statusParam = searchParams.get('status') as UserPresenceStatus | null;
 
     if (!userId || !role) {
       return NextResponse.json({ error: 'userId and role are required' }, { status: 400 });
     }
 
     // Touch the requesting user so they're marked online as well
-    touchPresence(userId);
+    if (statusParam) {
+      setUserStatus(userId, statusParam);
+    } else {
+      touchPresence(userId);
+    }
 
     // Fast-path cached directory to eliminate DB roundtrip latency on heartbeats
     const cacheKey = 'presence:users_dir';
@@ -76,6 +83,7 @@ export async function GET(req: NextRequest) {
     const presenceList = accessibleUsers.map((u) => {
       const online = isUserOnline(u.id);
       const lastActive = getLastActive(u.id);
+      const status = online ? getUserStatus(u.id) : 'offline';
       return {
         id: u.id,
         fullName: u.fullName,
@@ -84,6 +92,7 @@ export async function GET(req: NextRequest) {
         department: u.department,
         isOnline: online,
         lastActive,
+        status,
       };
     });
 
