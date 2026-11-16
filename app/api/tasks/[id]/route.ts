@@ -11,7 +11,56 @@ export async function PATCH(
   try {
     const { id } = await params;
     const data = await req.json();
-    const { title, description, assigneeIds, priority, status, dueDate, notes } = data;
+    const { title, description, assigneeIds, priority, status, dueDate, notes, userId } = data;
+
+    // Check existing task for permission checks
+    const existing = await prisma.task.findUnique({
+      where: { id },
+      include: {
+        assignedBy: { select: { id: true, role: true } },
+      },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+    }
+
+    // If task was 'requested' and status is being updated (approved/declined):
+    // Regular users cannot approve their own requests
+    if (existing.status === 'requested' && status && status !== 'requested') {
+      if (userId) {
+        const requestingUser = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { id: true, role: true },
+        });
+        if (requestingUser && requestingUser.role === 'user') {
+          return NextResponse.json({ error: 'Regular users cannot approve task requests' }, { status: 403 });
+        }
+      }
+    }
+
+    // Moderator boundary check: if a moderator is updating assignees, they can only assign themselves or their own users
+    if (assigneeIds !== undefined && Array.isArray(assigneeIds) && userId) {
+      const modifier = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, role: true },
+      });
+      if (modifier && modifier.role === 'moderator') {
+        const assignedUsers = await prisma.user.findMany({
+          where: { id: { in: assigneeIds } },
+          select: { id: true, role: true, createdBy: true },
+        });
+        const invalid = assignedUsers.filter(
+          (u) => u.id !== modifier.id && (!u.createdBy || !u.createdBy.includes(modifier.id))
+        );
+        if (invalid.length > 0) {
+          return NextResponse.json(
+            { error: 'Moderators can only assign tasks to their own users or themselves' },
+            { status: 403 }
+          );
+        }
+      }
+    }
 
     const updateData: any = { updatedAt: new Date().toISOString() };
     if (title !== undefined)        updateData.title        = title;
@@ -27,7 +76,10 @@ export async function PATCH(
     const task = await prisma.task.update({ 
       where: { id }, 
       data: updateData,
-      include: { assignees: { select: { id: true, fullName: true } } }
+      include: {
+        assignees: { select: { id: true, fullName: true, username: true, role: true } },
+        assignedBy: { select: { id: true, fullName: true, username: true, role: true } },
+      }
     });
 
     // Invalidate tasks cache
@@ -36,7 +88,9 @@ export async function PATCH(
     return NextResponse.json({ 
       ...task, 
       notes: JSON.parse(task.notes || '[]'),
-      assigneeIds: task.assignees.map(a => a.id)
+      assigneeIds: task.assignees.map(a => a.id),
+      assignedByName: task.assignedBy?.fullName || '—',
+      assignedByRole: task.assignedBy?.role || 'user',
     });
   } catch (e: any) {
     if (e?.code === 'P2025') return NextResponse.json({ error: 'Task not found' }, { status: 404 });

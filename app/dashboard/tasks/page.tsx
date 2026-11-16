@@ -3,17 +3,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth, type SafeUser } from '../../lib/auth-context';
 
-type TaskStatus   = 'pending' | 'in-progress' | 'review' | 'done';
+type TaskStatus   = 'pending' | 'in-progress' | 'review' | 'done' | 'requested';
 type TaskPriority = 'low' | 'medium' | 'high' | 'critical';
 
 interface Task {
   id: string; title: string; description: string;
   assigneeIds: string[]; assignedById: string;
+  assignedByName?: string; assignedByRole?: string;
   status: TaskStatus; priority: TaskPriority;
   dueDate: string; createdAt: string; updatedAt: string; notes: string[];
 }
 
-const STATUS_OPTIONS: TaskStatus[]     = ['pending', 'in-progress', 'review', 'done'];
+const STATUS_OPTIONS: TaskStatus[]     = ['pending', 'in-progress', 'review', 'done', 'requested'];
 const PRIORITY_OPTIONS: TaskPriority[] = ['low', 'medium', 'high', 'critical'];
 
 // ── Toast ──────────────────────────────────────────────────────────────────
@@ -30,18 +31,24 @@ function useToast() {
 }
 
 // ── Task Form Modal ────────────────────────────────────────────────────────
-function TaskModal({ task, users, currentUserId, canAssign, isClone, onClose, onSave }: {
-  task: Task | null; users: SafeUser[]; currentUserId: string;
-  canAssign: boolean; isClone?: boolean; onClose: () => void;
+function TaskModal({ task, users, allUsers, currentUserId, currentUserCreatedBy, canAssign, isClone, isRequest, onClose, onSave }: {
+  task: Task | null; users: SafeUser[]; allUsers?: SafeUser[]; currentUserId: string;
+  currentUserCreatedBy?: string; canAssign: boolean; isClone?: boolean; isRequest?: boolean; onClose: () => void;
   onSave: (data: any) => void;
 }) {
   const defaultDue = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
+  const userPool = allUsers && allUsers.length > 0 ? allUsers : users;
+  const moderators = userPool.filter((u) => u.role === 'moderator' || u.role === 'admin');
+  const defaultModId = task?.assignedById || 
+    (currentUserCreatedBy && moderators.some(m => m.id === currentUserCreatedBy) ? currentUserCreatedBy : moderators[0]?.id || currentUserId);
+
+  const [selectedModerator, setSelectedModerator] = useState<string>(defaultModId);
   const [form, setForm] = useState({
     title: task?.title ?? '',
     description: task?.description ?? '',
-    assigneeIds: isClone ? [] : (task?.assigneeIds ?? []),
+    assigneeIds: isRequest ? [currentUserId] : isClone ? [] : (task?.assigneeIds ?? []),
     priority: task?.priority ?? 'medium',
-    status: isClone ? 'pending' : (task?.status ?? 'pending'),
+    status: isRequest ? 'requested' : isClone ? 'pending' : (task?.status ?? 'pending'),
     dueDate: task ? task.dueDate.slice(0, 10) : defaultDue,
   });
   const [searchQuery, setSearchQuery] = useState('');
@@ -50,11 +57,11 @@ function TaskModal({ task, users, currentUserId, canAssign, isClone, onClose, on
 
   const setF = (k: string, v: any) => setForm((p) => ({ ...p, [k]: v }));
   
-  // Assignable: Admins can assign anyone. Moderators can assign users and moderators.
+  // Assignable: Admins can assign anyone. Moderators can assign their users and themselves.
   const assignable = users.filter((u) => u.role === 'user' || u.role === 'moderator' || (currentUserId === u.id));
 
   const toggleAssignee = (id: string) => {
-    if (!canAssign) return;
+    if (!canAssign || isRequest) return;
     setForm(p => ({
       ...p,
       assigneeIds: p.assigneeIds.includes(id) ? p.assigneeIds.filter(x => x !== id) : [...p.assigneeIds, id]
@@ -62,7 +69,7 @@ function TaskModal({ task, users, currentUserId, canAssign, isClone, onClose, on
   };
 
   const removeAssignee = (id: string) => {
-    if (!canAssign) return;
+    if (!canAssign || isRequest) return;
     setForm(p => ({
       ...p,
       assigneeIds: p.assigneeIds.filter(x => x !== id)
@@ -70,14 +77,14 @@ function TaskModal({ task, users, currentUserId, canAssign, isClone, onClose, on
   };
 
   const selectAllVisible = () => {
-    if (!canAssign) return;
+    if (!canAssign || isRequest) return;
     const visibleIds = filteredAssignable.map(u => u.id);
     const newIds = Array.from(new Set([...form.assigneeIds, ...visibleIds]));
     setForm(p => ({ ...p, assigneeIds: newIds }));
   };
 
   const clearSelection = () => {
-    if (!canAssign) return;
+    if (!canAssign || isRequest) return;
     setForm(p => ({ ...p, assigneeIds: [] }));
   };
 
@@ -104,7 +111,19 @@ function TaskModal({ task, users, currentUserId, canAssign, isClone, onClose, on
 
   const handleSave = () => {
     setSubmitted(true);
-    if (!form.title.trim() || form.assigneeIds.length === 0 || !form.dueDate) return;
+    if (!form.title.trim() || !form.dueDate) return;
+    if (isRequest) {
+      if (!selectedModerator) return;
+      onSave({
+        ...form,
+        status: 'requested',
+        isRequest: true,
+        assigneeIds: [currentUserId],
+        assignedById: selectedModerator,
+      });
+      return;
+    }
+    if (form.assigneeIds.length === 0) return;
     onSave(form);
   };
 
@@ -116,19 +135,32 @@ function TaskModal({ task, users, currentUserId, canAssign, isClone, onClose, on
         {/* Header */}
         <div className="task-modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div className="task-modal-icon-badge">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
-                <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
-                <path d="M9 14l2 2 4-4"/>
-              </svg>
+            <div className="task-modal-icon-badge" style={isRequest ? { background: 'rgba(139, 92, 246, 0.15)', color: '#8b5cf6' } : undefined}>
+              {isRequest ? (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                  <polyline points="22,6 12,13 2,6"/>
+                </svg>
+              ) : (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                  <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+                  <path d="M9 14l2 2 4-4"/>
+                </svg>
+              )}
             </div>
             <div>
               <h3 className="modal-title" style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
-                {isClone ? 'Delegate Task' : task ? 'Edit Task' : 'Create Task'}
+                {isRequest ? 'Request Task from Moderator' : isClone ? 'Delegate Task' : task ? 'Edit Task' : 'Create Task'}
               </h3>
               <p style={{ margin: '2px 0 0 0', fontSize: 13, color: 'var(--neutral-400)' }}>
-                {isClone ? 'Assign a copy of this task to team members with updated scope' : task ? 'Update task requirements, assignees, priority, or deadline' : 'Specify task details and delegate deliverables to team members'}
+                {isRequest
+                  ? 'Submit a task proposal for your moderator to review, schedule, and assign.'
+                  : isClone
+                  ? 'Assign a copy of this task to team members with updated scope'
+                  : task
+                  ? 'Update task requirements, assignees, priority, or deadline'
+                  : 'Specify task details and delegate deliverables to team members'}
               </p>
             </div>
           </div>
@@ -169,7 +201,32 @@ function TaskModal({ task, users, currentUserId, canAssign, isClone, onClose, on
             />
           </div>
 
-          {/* Assign To Section */}
+          {/* Assign To Section or Moderator Request Selection */}
+          {isRequest ? (
+            <div className="field" style={{ marginBottom: 20 }}>
+              <label className="label">
+                Select Moderator to Request From <span style={{ color: 'var(--error, #ef4444)' }}>*</span>
+              </label>
+              <select
+                className="select"
+                value={selectedModerator}
+                onChange={(e) => setSelectedModerator(e.target.value)}
+              >
+                {moderators.length === 0 ? (
+                  <option value="">No moderators available</option>
+                ) : (
+                  moderators.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.role === 'admin' ? '👑' : '⚡'} {m.fullName} ({m.role}) {m.id === currentUserCreatedBy ? '— (Your Assigned Moderator)' : ''}
+                    </option>
+                  ))
+                )}
+              </select>
+              <div style={{ fontSize: 12, color: 'var(--neutral-400)', marginTop: 6 }}>
+                Your task request will be delivered to this moderator for review. Once approved, it will be scheduled into your deliverables.
+              </div>
+            </div>
+          ) : (
           <div className="field">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -376,9 +433,10 @@ function TaskModal({ task, users, currentUserId, canAssign, isClone, onClose, on
               </div>
             )}
           </div>
+          )}
 
-          {/* Balanced 3-column row for Due Date, Priority, and Status */}
-          <div className="task-form-row-3">
+          {/* Row for Due Date, Priority (and Status if not request) */}
+          <div className={isRequest ? "task-form-row-2" : "task-form-row-3"} style={isRequest ? { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 } : undefined}>
             <div className="field" style={{ margin: 0 }}>
               <label className="label">
                 Due Date <span style={{ color: 'var(--error, #ef4444)' }}>*</span>
@@ -402,22 +460,28 @@ function TaskModal({ task, users, currentUserId, canAssign, isClone, onClose, on
               </select>
             </div>
 
-            <div className="field" style={{ margin: 0 }}>
-              <label className="label">Status</label>
-              <select className="select" value={form.status} onChange={(e) => setF('status', e.target.value)}>
-                <option value="pending">⏳ Pending</option>
-                <option value="in-progress">🔄 In Progress</option>
-                <option value="review">👁️ In Review</option>
-                <option value="done">✅ Done</option>
-              </select>
-            </div>
+            {!isRequest && (
+              <div className="field" style={{ margin: 0 }}>
+                <label className="label">Status</label>
+                <select className="select" value={form.status} onChange={(e) => setF('status', e.target.value)}>
+                  <option value="pending">⏳ Pending</option>
+                  <option value="in-progress">🔄 In Progress</option>
+                  <option value="review">👁️ In Review</option>
+                  <option value="done">✅ Done</option>
+                </select>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Modal Footer */}
         <div className="modal-footer" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontSize: 13, color: 'var(--neutral-400)' }}>
-            {form.assigneeIds.length > 0 ? (
+            {isRequest ? (
+              <span>
+                Requesting from <strong style={{ color: 'var(--neutral-700)' }}>{moderators.find(m => m.id === selectedModerator)?.fullName || 'Moderator'}</strong>
+              </span>
+            ) : form.assigneeIds.length > 0 ? (
               <span>
                 Assigning to <strong style={{ color: 'var(--neutral-700)' }}>{form.assigneeIds.length}</strong> team {form.assigneeIds.length === 1 ? 'member' : 'members'}
               </span>
@@ -431,7 +495,12 @@ function TaskModal({ task, users, currentUserId, canAssign, isClone, onClose, on
               Cancel
             </button>
             <button className="btn btn-brand" onClick={handleSave} type="button">
-              {isClone ? (
+              {isRequest ? (
+                <>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                  Submit Request
+                </>
+              ) : isClone ? (
                 <>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M12 11v6"/><path d="M9 14l3 3 3-3"/></svg>
                   Assign New Task
@@ -456,35 +525,50 @@ function TaskModal({ task, users, currentUserId, canAssign, isClone, onClose, on
 }
 
 // ── Status Update Modal ────────────────────────────────────────────────────
-function UpdateStatusModal({ task, onClose, onSave }: {
-  task: Task; onClose: () => void;
+function UpdateStatusModal({ task, canAssign, onClose, onSave }: {
+  task: Task; canAssign?: boolean; onClose: () => void;
   onSave: (status: TaskStatus, note: string) => void;
 }) {
   const [status, setStatus] = useState<TaskStatus>(task.status);
   const [note, setNote]     = useState('');
+  const isRequested = task.status === 'requested';
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3 className="modal-title">Update Task Status</h3>
+          <h3 className="modal-title">{isRequested && !canAssign ? 'Add Note / Comment' : 'Update Task Status'}</h3>
           <button className="btn-close" onClick={onClose}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </div>
         <div className="modal-body">
           <p style={{ fontSize: 14, color: 'var(--neutral-600)', marginBottom: 16 }}><strong>{task.title}</strong></p>
-          <div className="field"><label className="label">New Status</label>
-            <select className="select" value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)}>
-              <option value="pending">⏳ Pending</option>
-              <option value="in-progress">🔄 In Progress</option>
-              <option value="review">👁️ In Review</option>
-              <option value="done">✅ Done</option>
-            </select>
-          </div>
-          <div className="field"><label className="label">Note (optional)</label>
-            <textarea className="textarea" value={note} onChange={(e) => setNote(e.target.value)} rows={3} placeholder="Add a progress note…" /></div>
+          {isRequested && !canAssign ? (
+            <div style={{ fontSize: 13, color: 'var(--neutral-500)', fontStyle: 'italic', marginBottom: 16 }}>
+              Status cannot be modified while awaiting moderator review.
+            </div>
+          ) : (
+            <div className="field"><label className="label">New Status</label>
+              <select className="select" value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)}>
+                {isRequested && <option value="requested">⏳ Requested</option>}
+                <option value="pending">⏳ Pending</option>
+                <option value="in-progress">🔄 In Progress</option>
+                <option value="review">👁️ In Review</option>
+                <option value="done">✅ Done</option>
+              </select>
+            </div>
+          )}
+          <div className="field"><label className="label">Note / Comment</label>
+            <textarea className="textarea" value={note} onChange={(e) => setNote(e.target.value)} rows={3} placeholder={isRequested ? "Add a note for the moderator…" : "Add a progress note…"} /></div>
         </div>
         <div className="modal-footer">
           <button className="btn btn-outline" onClick={onClose}>Cancel</button>
-          <button className="btn btn-brand" onClick={() => onSave(status, note)}>Update</button>
+          <button
+            className="btn btn-brand"
+            onClick={() => onSave(isRequested && !canAssign ? 'requested' : status, note)}
+            disabled={(isRequested && !canAssign && !note.trim()) || (!isRequested && status === task.status && !note.trim())}
+          >
+            {isRequested && !canAssign ? 'Post Note' : 'Update'}
+          </button>
         </div>
       </div>
     </div>
@@ -492,11 +576,12 @@ function UpdateStatusModal({ task, onClose, onSave }: {
 }
 
 // ── Task Detail Modal ──────────────────────────────────────────────────────
-function TaskDetailModal({ task, users, onClose, onUpdate }: { task: Task; users: SafeUser[]; onClose: () => void; onUpdate: (status: TaskStatus, note: string) => void }) {
+function TaskDetailModal({ task, users, canAssign, onClose, onUpdate }: { task: Task; users: SafeUser[]; canAssign?: boolean; onClose: () => void; onUpdate: (status: TaskStatus, note: string) => void }) {
   const assignee = users.find((u) => u.id === task.assigneeIds[0]);
   const assigner = users.find((u) => u.id === task.assignedById);
   const [status, setStatus] = useState<TaskStatus>(task.status);
   const [note, setNote] = useState('');
+  const isRequested = task.status === 'requested';
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -506,6 +591,61 @@ function TaskDetailModal({ task, users, onClose, onUpdate }: { task: Task; users
           <button className="btn-close" onClick={onClose}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </div>
         <div className="modal-body">
+          {/* Task Request Action Banner for Moderators / Admins */}
+          {isRequested && canAssign && (
+            <div style={{
+              background: 'rgba(139, 92, 246, 0.08)',
+              border: '1.5px solid rgba(139, 92, 246, 0.3)',
+              borderRadius: 'var(--radius-md)',
+              padding: '14px',
+              marginBottom: 18,
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--neutral-900)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>📩</span> Task Request from User
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--neutral-600)', marginBottom: 12, lineHeight: 1.5 }}>
+                This task was requested by <strong>{task.assigneeIds.map(id => users.find(u => u.id === id)?.fullName || 'User').join(', ')}</strong>. You can approve and schedule it into deliverables, or decline if not feasible.
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  className="btn btn-brand btn-sm"
+                  onClick={() => onUpdate('pending', 'Task request approved and scheduled by moderator')}
+                  style={{ flex: 1, justifyContent: 'center' }}
+                >
+                  ✓ Approve Task
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => onUpdate('done', 'Task request declined')}
+                  style={{ color: 'var(--error, #ef4444)', borderColor: 'rgba(239, 68, 68, 0.3)' }}
+                >
+                  ✕ Decline
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Task Request Info Banner for Regular Users */}
+          {isRequested && !canAssign && (
+            <div style={{
+              background: 'rgba(139, 92, 246, 0.08)',
+              border: '1px solid rgba(139, 92, 246, 0.25)',
+              borderRadius: 'var(--radius-md)',
+              padding: '12px 14px',
+              marginBottom: 16,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+            }}>
+              <span style={{ fontSize: 18 }}>⏳</span>
+              <div style={{ fontSize: 12.5, color: 'var(--neutral-700)', lineHeight: 1.4 }}>
+                <strong>Awaiting Moderator Review:</strong> Your task request was submitted to <strong>{assigner?.fullName || task.assignedByName || 'Moderator'}</strong> and is waiting for approval.
+              </div>
+            </div>
+          )}
+
           <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
             <span className={`badge badge-${task.status}`}>{task.status.replace('-', ' ')}</span>
             <span className={`badge badge-${task.priority}`}>{task.priority}</span>
@@ -514,7 +654,7 @@ function TaskDetailModal({ task, users, onClose, onUpdate }: { task: Task; users
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
             {[
               ['Assigned To', task.assigneeIds.length > 0 ? task.assigneeIds.map(id => users.find(u => u.id === id)?.fullName || '—').join(', ') : '—'],
-              ['Assigned By', assigner?.fullName ?? '—'],
+              ['Assigned By', assigner?.fullName ?? task.assignedByName ?? '—'],
               ['Due Date', new Date(task.dueDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })],
               ['Created', new Date(task.createdAt).toLocaleDateString()],
             ].map(([label, val]) => (
@@ -534,21 +674,33 @@ function TaskDetailModal({ task, users, onClose, onUpdate }: { task: Task; users
 
           <div className="divider" />
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--neutral-700)', marginBottom: 10 }}>Update Progress</div>
-          <div className="field-row">
-            <div className="field"><label className="label">Change Status</label>
-              <select className="select" value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)}>
-                <option value="pending">⏳ Pending</option>
-                <option value="in-progress">🔄 In Progress</option>
-                <option value="review">👁️ In Review</option>
-                <option value="done">✅ Done</option>
-              </select>
+          {isRequested && !canAssign ? (
+            <div style={{ fontSize: 13, color: 'var(--neutral-500)', fontStyle: 'italic', marginBottom: 12 }}>
+              Status cannot be modified while awaiting moderator review.
             </div>
-          </div>
+          ) : (
+            <div className="field-row">
+              <div className="field"><label className="label">Change Status</label>
+                <select className="select" value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)}>
+                  {isRequested && <option value="requested">⏳ Requested</option>}
+                  <option value="pending">⏳ Pending</option>
+                  <option value="in-progress">🔄 In Progress</option>
+                  <option value="review">👁️ In Review</option>
+                  <option value="done">✅ Done</option>
+                </select>
+              </div>
+            </div>
+          )}
           <div className="field"><label className="label">Add a Comment</label>
             <textarea className="textarea" value={note} onChange={(e) => setNote(e.target.value)} rows={3} placeholder="Add your comment or update note here…" />
           </div>
-          <button className="btn btn-brand" style={{ width: '100%', marginTop: 8 }} onClick={() => onUpdate(status, note)} disabled={status === task.status && !note.trim()}>
-            Post Comment / Update Status
+          <button
+            className="btn btn-brand"
+            style={{ width: '100%', marginTop: 8 }}
+            onClick={() => onUpdate(isRequested && !canAssign ? 'requested' : status, note)}
+            disabled={(isRequested && !canAssign && !note.trim()) || (!isRequested && status === task.status && !note.trim())}
+          >
+            {isRequested && !canAssign ? 'Post Comment' : 'Post Comment / Update Status'}
           </button>
         </div>
         <div className="modal-footer"><button className="btn btn-outline" onClick={onClose}>Close</button></div>
@@ -565,12 +717,13 @@ export default function TasksPage() {
   const { toasts, push } = useToast();
   const [tasks, setTasks]   = useState<Task[]>([]);
   const [users, setUsers]   = useState<SafeUser[]>([]);
+  const [allUsers, setAllUsers] = useState<SafeUser[]>([]);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus]     = useState<TaskStatus | 'all'>('all');
   const [filterPriority, setFilterPriority] = useState<TaskPriority | 'all'>('all');
   const [view, setView]     = useState<'grid' | 'list'>('grid');
   const [modalState, setModalState] = useState<
-    | { type: 'create' } | { type: 'edit'; task: Task } | { type: 'clone'; task: Task }
+    | { type: 'create' } | { type: 'request' } | { type: 'edit'; task: Task } | { type: 'clone'; task: Task }
     | { type: 'detail'; task: Task } | { type: 'status'; task: Task } | null
   >(null);
 
@@ -578,7 +731,7 @@ export default function TasksPage() {
 
   const loadTasks = useCallback(() => {
     if (!currentUser) return;
-    const url = currentUser.role !== 'admin' ? `/api/tasks?userId=${currentUser.id}` : '/api/tasks';
+    const url = `/api/tasks?userId=${currentUser.id}`;
     fetch(url)
       .then((r) => r.json())
       .then((data) => {
@@ -601,9 +754,12 @@ export default function TasksPage() {
       .then((r) => r.json())
       .then((data) => {
         if (!Array.isArray(data)) return;
+        setAllUsers(data);
         const targetUsers = currentUser.role === 'admin'
           ? data
-          : data.filter((u: SafeUser) => u.id === currentUser.id || (u.role === 'user' && u.createdBy?.includes(currentUser.id)));
+          : currentUser.role === 'moderator'
+          ? data.filter((u: SafeUser) => u.id === currentUser.id || (u.role === 'user' && u.createdBy?.includes(currentUser.id)))
+          : data;
         setUsers((prev) => (JSON.stringify(prev) === JSON.stringify(targetUsers) ? prev : targetUsers));
       })
       .catch(() => {});
@@ -625,21 +781,31 @@ export default function TasksPage() {
       && (filterPriority === 'all' || t.priority === filterPriority);
   });
 
-  const getUserName = (id: string) => users.find((u) => u.id === id)?.fullName ?? '—';
+  const getUserName = (id: string) => allUsers.find((u) => u.id === id)?.fullName ?? users.find((u) => u.id === id)?.fullName ?? '—';
 
   async function handleSave(form: any) {
     const isEdit = modalState?.type === 'edit';
     const taskId = isEdit ? (modalState as any).task.id : undefined;
+    const isRequest = form.isRequest || modalState?.type === 'request';
     const body = {
-      title: form.title, description: form.description,
-      assigneeIds: form.assigneeIds, priority: form.priority,
-      status: form.status, dueDate: new Date(form.dueDate).toISOString(),
-      ...(!isEdit && { assignedById: currentUser!.id }),
+      title: form.title,
+      description: form.description,
+      assigneeIds: form.assigneeIds,
+      priority: form.priority,
+      status: form.status,
+      dueDate: new Date(form.dueDate).toISOString(),
+      isRequest,
+      userId: currentUser!.id,
+      ...(!isEdit && { assignedById: form.assignedById || currentUser!.id }),
     };
     const res = isEdit
       ? await fetch(`/api/tasks/${taskId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       : await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (res.ok) { push('success', isEdit ? 'Task updated' : 'Task created'); loadTasks(); setModalState(null); }
+    if (res.ok) {
+      push('success', isEdit ? 'Task updated' : isRequest ? 'Task request sent to moderator!' : 'Task created');
+      loadTasks();
+      setModalState(null);
+    }
     else { const d = await res.json(); push('error', d.error ?? 'Failed'); }
   }
 
@@ -649,9 +815,13 @@ export default function TasksPage() {
       : task.notes;
     const res = await fetch(`/api/tasks/${task.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status, notes }),
+      body: JSON.stringify({ status, notes, userId: currentUser?.id }),
     });
-    if (res.ok) { push('success', 'Status updated'); loadTasks(); setModalState(null); }
+    if (res.ok) {
+      push('success', status === 'pending' && task.status === 'requested' ? 'Task request approved!' : 'Status updated');
+      loadTasks();
+      setModalState(null);
+    }
     else push('error', 'Failed to update status');
   }
 
@@ -706,10 +876,15 @@ export default function TasksPage() {
               </button>
             ))}
           </div>
-          {canAssign && (
+          {canAssign ? (
             <button id="create-task-btn" className="btn btn-brand" onClick={() => setModalState({ type: 'create' })}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Assign Task
+            </button>
+          ) : (
+            <button id="request-task-btn" className="btn btn-brand" onClick={() => setModalState({ type: 'request' })}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Request Task
             </button>
           )}
         </div>
@@ -754,6 +929,12 @@ export default function TasksPage() {
                 <span className="icon-chip status-chip-review" title="In Review">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                   Review
+                </span>
+              )}
+              {task.status === 'requested' && (
+                <span className="icon-chip status-chip-requested" title="Requested">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  Requested
                 </span>
               )}
               {task.status === 'done' && (
@@ -864,7 +1045,7 @@ export default function TasksPage() {
         );
 
         return filtered.length === 0 ? (
-          <div className="card"><div className="empty-state"><div className="empty-state-icon">📋</div><h3>No tasks found</h3><p>{canAssign ? 'Click "Assign Task" to create one.' : 'No tasks assigned to you yet.'}</p></div></div>
+          <div className="card"><div className="empty-state"><div className="empty-state-icon">📋</div><h3>No tasks found</h3><p>{canAssign ? 'Click "Assign Task" to create one.' : 'No tasks assigned to you yet. Click "Request Task" above to request a task from your moderator.'}</p></div></div>
         ) : (
           <>
             {/* Mobile & Tablet Icon View (Always active on mobile and tablet) */}
@@ -942,15 +1123,36 @@ export default function TasksPage() {
       })()}
 
       {/* Modals */}
-      {(modalState?.type === 'create' || modalState?.type === 'edit' || modalState?.type === 'clone') && (
-        <TaskModal task={(modalState.type === 'edit' || modalState.type === 'clone') ? modalState.task : null} users={users}
-          currentUserId={currentUser.id} canAssign={canAssign} isClone={modalState.type === 'clone'}
-          onClose={() => setModalState(null)} onSave={handleSave} />
+      {(modalState?.type === 'create' || modalState?.type === 'request' || modalState?.type === 'edit' || modalState?.type === 'clone') && (
+        <TaskModal
+          task={(modalState.type === 'edit' || modalState.type === 'clone') ? modalState.task : null}
+          users={users}
+          allUsers={allUsers}
+          currentUserId={currentUser.id}
+          currentUserCreatedBy={currentUser.createdBy}
+          canAssign={canAssign}
+          isClone={modalState.type === 'clone'}
+          isRequest={modalState.type === 'request'}
+          onClose={() => setModalState(null)}
+          onSave={handleSave}
+        />
       )}
-      {modalState?.type === 'detail' && <TaskDetailModal task={modalState.task} users={users} onClose={() => setModalState(null)} onUpdate={(status, note) => handleStatusUpdate(modalState.task, status, note)} />}
+      {modalState?.type === 'detail' && (
+        <TaskDetailModal
+          task={modalState.task}
+          users={allUsers.length > 0 ? allUsers : users}
+          canAssign={canAssign}
+          onClose={() => setModalState(null)}
+          onUpdate={(status, note) => handleStatusUpdate(modalState.task, status, note)}
+        />
+      )}
       {modalState?.type === 'status' && (
-        <UpdateStatusModal task={modalState.task} onClose={() => setModalState(null)}
-          onSave={(status, note) => handleStatusUpdate(modalState.task, status, note)} />
+        <UpdateStatusModal
+          task={modalState.task}
+          canAssign={canAssign}
+          onClose={() => setModalState(null)}
+          onSave={(status, note) => handleStatusUpdate(modalState.task, status, note)}
+        />
       )}
     </>
   );

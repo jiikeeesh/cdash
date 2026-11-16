@@ -39,6 +39,19 @@ const navItems: NavItem[] = [
     ),
   },
   {
+    href: '/dashboard/calendar',
+    label: 'Calendar',
+    roles: ['admin', 'moderator', 'user'],
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+        <line x1="16" y1="2" x2="16" y2="6"/>
+        <line x1="8" y1="2" x2="8" y2="6"/>
+        <line x1="3" y1="10" x2="21" y2="10"/>
+      </svg>
+    ),
+  },
+  {
     href: '/dashboard/users',
     label: 'Users',
     roles: ['admin', 'moderator'],
@@ -94,6 +107,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const pathname = usePathname();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarMinimized, setIsSidebarMinimized] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const [isProfileSheetOpen, setIsProfileSheetOpen] = useState(false);
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
@@ -271,7 +285,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       )}
       
       {/* Sidebar (Desktop) */}
-      <aside className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
+      <aside className={`sidebar ${isSidebarOpen ? 'open' : ''}${isSidebarMinimized ? ' sidebar-minimized' : ''}`}>
         {/* Logo */}
         <div className="sidebar-header">
           <div className="sidebar-logo">
@@ -280,11 +294,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
               </svg>
             </div>
-            <div>
+            <div className="sidebar-logo-text-wrap">
               <div className="sidebar-logo-text">CompanyDash</div>
               <div className="sidebar-logo-sub">Work Management</div>
             </div>
           </div>
+          {/* Minimize / Maximize toggle – desktop & tablet only */}
+          <button
+            type="button"
+            className="sidebar-toggle-btn"
+            onClick={() => setIsSidebarMinimized((prev) => !prev)}
+            aria-label={isSidebarMinimized ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={isSidebarMinimized ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              style={{ transform: isSidebarMinimized ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s ease' }}
+            >
+              <path d="M15 18l-6-6 6-6"/>
+            </svg>
+          </button>
         </div>
 
         {/* User info */}
@@ -293,7 +327,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className="sidebar-avatar">{initials}</div>
             <span className={`status-avatar-badge ${currentStatusConfig.dotClass}`} />
           </div>
-          <div className="sidebar-user-info">
+          <div className="sidebar-user-info sidebar-collapsible-text">
             <div className="sidebar-user-name">{currentUser.fullName}</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
               <span className={roleBadgeClass(currentUser.role as Role)}>{currentUser.role}</span>
@@ -307,15 +341,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Navigation */}
         <nav className="sidebar-nav">
-          <div className="sidebar-nav-label">Navigation</div>
+          <div className="sidebar-nav-label sidebar-collapsible-text">Navigation</div>
           {visibleNav.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               className={`sidebar-nav-item${pathname === item.href ? ' active' : ''}`}
+              title={item.label}
             >
               <span className="nav-icon">{item.icon}</span>
-              {item.label}
+              <span className="sidebar-collapsible-text">{item.label}</span>
             </Link>
           ))}
 
@@ -326,18 +361,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               className="logout-btn" 
               onClick={handleLogout} 
               id="sidebar-logout"
+              title="Sign out"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
               </svg>
-              Sign out
+              <span className="sidebar-collapsible-text">Sign out</span>
             </button>
           </div>
         </nav>
       </aside>
 
       {/* Main Content */}
-      <div className="main-content">
+      <div className={`main-content${isSidebarMinimized ? ' main-content-expanded' : ''}`}>
         {/* Topbar */}
         <header className="topbar">
           {/* Desktop Topbar Content */}
@@ -720,6 +756,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             ) : (
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+              </svg>
+            )}
+          </Link>
+
+          {/* Calendar */}
+          <Link 
+            href="/dashboard/calendar" 
+            className={`insta-nav-tab${pathname.startsWith('/dashboard/calendar') ? ' active' : ''}`}
+            aria-label="Calendar"
+          >
+            {pathname.startsWith('/dashboard/calendar') ? (
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/>
+              </svg>
+            ) : (
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                <line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/>
+                <line x1="3" y1="10" x2="21" y2="10"/>
               </svg>
             )}
           </Link>

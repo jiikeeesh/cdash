@@ -55,10 +55,8 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!currentUser) return;
 
-    // Parallel fetch all dashboard data concurrently
-    const tasksUrl = currentUser.role !== 'admin'
-      ? `/api/tasks?userId=${currentUser.id}`
-      : '/api/tasks';
+    // Parallel fetch all dashboard data concurrently (scoped securely by userId)
+    const tasksUrl = `/api/tasks?userId=${currentUser.id}`;
 
     const promises: Promise<any>[] = [
       fetch(tasksUrl).then((r) => r.json()).catch(() => []),

@@ -214,7 +214,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
               const isAssignee = t.assigneeIds?.includes(currentUser.id);
               const isCreator = t.assignedById === currentUser.id;
 
-              if (!prev && isAssignee && !isCreator) {
+              if (!prev && isAssignee && !isCreator && t.status !== 'requested') {
                 const eventKey = `task-assigned-${t.id}`;
                 if (!notifiedEventsRef.current.has(eventKey)) {
                   recordEvent(eventKey);
@@ -226,11 +226,31 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
                     priority: t.priority === 'critical' ? 'critical' : 'high',
                   });
                 }
+              } else if (!prev && isCreator && t.status === 'requested') {
+                const eventKey = `task-requested-${t.id}`;
+                if (!notifiedEventsRef.current.has(eventKey)) {
+                  recordEvent(eventKey);
+                  addNotification({
+                    title: 'New Task Request 📩',
+                    message: `A team member requested a new task: "${t.title}" (Priority: ${t.priority})`,
+                    type: 'task_assigned',
+                    link: '/dashboard/tasks',
+                    priority: t.priority === 'critical' ? 'critical' : 'high',
+                  });
+                }
               } else if (prev && prev.status !== t.status) {
                 const eventKey = `task-status-${t.id}-${t.status}`;
                 if (!notifiedEventsRef.current.has(eventKey)) {
                   recordEvent(eventKey);
-                  if (isCreator && !isAssignee) {
+                  if (prev.status === 'requested' && t.status === 'pending' && isAssignee) {
+                    addNotification({
+                      title: 'Task Request Approved! ✅',
+                      message: `Your requested task "${t.title}" was approved and scheduled!`,
+                      type: 'task_assigned',
+                      link: '/dashboard/tasks',
+                      priority: 'high',
+                    });
+                  } else if (isCreator && !isAssignee) {
                     addNotification({
                       title: `Task Status: ${t.status.toUpperCase()}`,
                       message: `"${t.title}" was moved from ${prev.status} to ${t.status}`,
