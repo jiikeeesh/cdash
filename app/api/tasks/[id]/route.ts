@@ -3,6 +3,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/db';
 import { cacheInvalidate } from '@/app/lib/cache';
+import { setUserStatus, isUserOnline, removePresence, UserPresenceStatus } from '@/app/lib/presence';
+import { getActiveTaskBusynessForUser } from '@/app/lib/task-status';
 
 export async function PATCH(
   req: NextRequest,
@@ -86,6 +88,26 @@ export async function PATCH(
     // Invalidate tasks cache
     cacheInvalidate('tasks');
 
+    // Update status for all users selected in this task to match busyness
+    const targetAssignees = task.assignees.map(a => a.id);
+    if (busyness && targetAssignees.length > 0) {
+      try {
+        await prisma.user.updateMany({
+          where: { id: { in: targetAssignees } },
+          data: { status: busyness },
+        });
+        for (const aid of targetAssignees) {
+          try {
+            setUserStatus(aid, busyness as UserPresenceStatus);
+          } catch {}
+        }
+        cacheInvalidate('presence');
+        cacheInvalidate('users');
+      } catch (statusErr) {
+        console.error('Failed to update assignee status:', statusErr);
+      }
+    }
+
     return NextResponse.json({ 
       ...task, 
       notes: JSON.parse(task.notes || '[]'),
@@ -105,10 +127,59 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+
+    // 1. Fetch task and its assignees before deletion
+    const existing = await prisma.task.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        assignees: { select: { id: true } },
+      },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+    }
+
+    // 2. Delete the task
     await prisma.task.delete({ where: { id } });
 
-    // Invalidate tasks cache
+    // 3. For all assignees of this deleted task, recalculate their presence status immediately:
+    // If online: revert to 'active' (unless another active task is scheduled right now)
+    // If offline: ensure marked 'offline'
+    if (existing.assignees && existing.assignees.length > 0) {
+      for (const a of existing.assignees) {
+        const isOnline = isUserOnline(a.id);
+        const otherTaskBusyness = await getActiveTaskBusynessForUser(a.id);
+
+        let newStatus: UserPresenceStatus;
+        if (!isOnline) {
+          newStatus = 'offline';
+        } else if (otherTaskBusyness) {
+          newStatus = otherTaskBusyness as UserPresenceStatus;
+        } else {
+          newStatus = 'active';
+        }
+
+        try {
+          await prisma.user.update({
+            where: { id: a.id },
+            data: { status: newStatus },
+          });
+        } catch {}
+
+        if (isOnline) {
+          setUserStatus(a.id, newStatus);
+        } else {
+          removePresence(a.id);
+        }
+      }
+    }
+
+    // Invalidate tasks, presence, and users caches immediately
     cacheInvalidate('tasks');
+    cacheInvalidate('presence');
+    cacheInvalidate('users');
 
     return NextResponse.json({ success: true });
   } catch (e: any) {

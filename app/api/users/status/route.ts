@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/db';
+import { setUserStatus, UserPresenceStatus } from '@/app/lib/presence';
 
 export const VALID_USER_STATUSES = ['active', 'away', 'busy', 'dnd', 'ooo'] as const;
 export type UserStatusType = (typeof VALID_USER_STATUSES)[number];
@@ -59,6 +60,12 @@ export async function PATCH(req: NextRequest) {
       data: { status },
       select: { id: true, username: true, status: true },
     });
+
+    try {
+      setUserStatus(userId, status as UserPresenceStatus);
+    } catch {
+      // In-memory presence optional
+    }
 
     return NextResponse.json({ success: true, user: updated });
   } catch (error) {

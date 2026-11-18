@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/db';
 import { touchPresence, removePresence, isUserOnline, getLastActive, setUserStatus, getUserStatus, UserPresenceStatus } from '@/app/lib/presence';
-import { cacheGet, cacheSet } from '@/app/lib/cache';
+import { cacheGet, cacheSet, cacheInvalidate } from '@/app/lib/cache';
+import { getActiveTaskBusynessForUser } from '@/app/lib/task-status';
 
 // POST /api/presence -> Heartbeat ping / status update / logout notification
 export async function POST(req: NextRequest) {
   try {
     const data = await req.json();
-    const { userId, action, status } = data;
+    const { userId, action, status, manual } = data;
 
     if (!userId) {
       return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
@@ -15,13 +16,47 @@ export async function POST(req: NextRequest) {
 
     if (action === 'logout') {
       removePresence(userId);
-    } else if (status) {
-      setUserStatus(userId, status as UserPresenceStatus);
-    } else {
-      touchPresence(userId);
+      try {
+        await prisma.user.update({
+          where: { id: userId },
+          data: { status: 'offline' },
+        });
+        cacheInvalidate('presence');
+        cacheInvalidate('users');
+      } catch (err) {
+        console.error('Failed to set user offline on logout:', err);
+      }
+      return NextResponse.json({ success: true, status: 'offline', timestamp: Date.now() });
     }
 
-    return NextResponse.json({ success: true, status: getUserStatus(userId), timestamp: Date.now() });
+    // Determine effective presence status:
+    // If user explicitly manually changed status, respect their choice
+    let effectiveStatus: UserPresenceStatus;
+    if (manual && status) {
+      effectiveStatus = status as UserPresenceStatus;
+    } else {
+      // Check if user currently has an assigned task/event scheduled for right now
+      const activeTaskBusyness = await getActiveTaskBusynessForUser(userId);
+      if (activeTaskBusyness) {
+        effectiveStatus = activeTaskBusyness as UserPresenceStatus;
+      } else {
+        // Task time crossed or task deleted: user is online, so status is active
+        effectiveStatus = 'active';
+      }
+    }
+
+    setUserStatus(userId, effectiveStatus);
+    touchPresence(userId);
+
+    // Persist effective status to user record in DB
+    try {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { status: effectiveStatus },
+      });
+    } catch {}
+
+    return NextResponse.json({ success: true, status: effectiveStatus, timestamp: Date.now() });
   } catch (e) {
     return NextResponse.json({ error: 'Failed to record presence' }, { status: 500 });
   }
@@ -42,7 +77,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Touch the requesting user so they're marked online as well
-    if (statusParam) {
+    if (statusParam && statusParam !== 'offline') {
       setUserStatus(userId, statusParam);
     } else {
       touchPresence(userId);

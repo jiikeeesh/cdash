@@ -9,7 +9,7 @@ import {
   encryptE2EMessage,
   decryptE2EMessage,
 } from '../../lib/crypto';
-import UserStatusPicker, { getStatusOption } from '../../components/UserStatusPicker';
+import { getStatusOption } from '../../components/UserStatusPicker';
 
 interface Contact {
   id: string;
@@ -18,6 +18,7 @@ interface Contact {
   role: string;
   department?: string;
   status?: string;
+  isOnline?: boolean;
   publicKey?: string;
   lastMessageAt?: string | null;
   unreadCount?: number;
@@ -112,6 +113,12 @@ export default function MessagesPage() {
   const [editingMessage, setEditingMessage] = useState<DecryptedMessage | null>(null);
   const [deleteModalMsg, setDeleteModalMsg] = useState<DecryptedMessage | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [activeBubbleActionsId, setActiveBubbleActionsId] = useState<string | null>(null);
+
+  // Delete Chat state
+  const [deleteChatModalOpen, setDeleteChatModalOpen] = useState(false);
+  const [deleteChatMode, setDeleteChatMode] = useState<'for-me' | 'for-everyone'>('for-me');
+  const [isDeletingChat, setIsDeletingChat] = useState(false);
 
   // Link Task state
   const [availableTasks, setAvailableTasks] = useState<LinkedTask[]>([]);
@@ -165,7 +172,16 @@ export default function MessagesPage() {
       const res = await fetch(`/api/messages/contacts?userId=${currentUser.id}`);
       if (res.ok) {
         const data = await res.json();
-        setContacts(data.contacts || []);
+        const freshContacts: Contact[] = data.contacts || [];
+        setContacts(freshContacts);
+        setSelectedContact((prev) => {
+          if (!prev) return null;
+          const fresh = freshContacts.find((c) => c.id === prev.id);
+          if (fresh && (fresh.status !== prev.status || fresh.isOnline !== prev.isOnline)) {
+            return { ...prev, status: fresh.status, isOnline: fresh.isOnline };
+          }
+          return prev;
+        });
       }
     } catch (err) {
       console.error('Failed to load contacts:', err);
@@ -174,7 +190,7 @@ export default function MessagesPage() {
 
   useEffect(() => {
     loadContacts();
-    const interval = setInterval(loadContacts, 12000);
+    const interval = setInterval(loadContacts, 4000); // 4s real-time presence & contact refresh
     return () => clearInterval(interval);
   }, [loadContacts]);
 
@@ -421,6 +437,29 @@ export default function MessagesPage() {
     }
   };
 
+  const handleDeleteChat = async () => {
+    if (!currentUser || !selectedContact) return;
+    setIsDeletingChat(true);
+    try {
+      const res = await fetch(
+        `/api/messages?userId=${currentUser.id}&peerId=${selectedContact.id}&mode=${deleteChatMode}`,
+        { method: 'DELETE' }
+      );
+      if (res.ok) {
+        setMessages([]);
+        setDeleteChatModalOpen(false);
+        loadContacts();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Failed to delete chat');
+      }
+    } catch (err) {
+      console.error('Error deleting chat:', err);
+    } finally {
+      setIsDeletingChat(false);
+    }
+  };
+
   if (!currentUser) return null;
 
   const filteredContacts = contacts.filter((c) => {
@@ -434,21 +473,21 @@ export default function MessagesPage() {
   });
 
   return (
-    <div>
+    <div className="msg-page-wrap">
       {/* Page Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+      <div className={`msg-header-bar ${mobileShowChat && selectedContact ? 'in-chat' : ''}`}>
         <div>
-          <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--neutral-900)', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--neutral-900)', margin: 0, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span>💬</span> Direct Messages
             <span className="msg-e2e-badge" title="All communications are end-to-end encrypted using AES-256-GCM">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
               E2E Encrypted
             </span>
-            <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: 'var(--neutral-100)', color: 'var(--neutral-600)', border: '1px solid var(--neutral-300)', fontWeight: 600 }}>
-              ⏳ 1-Month Auto-Delete Active
+            <span className="msg-policy-badge">
+              ⏳ 1-Month Policy
             </span>
           </h2>
-          <p style={{ margin: '3px 0 0 0', fontSize: 13, color: 'var(--neutral-500)' }}>
+          <p className="msg-header-desc" style={{ margin: '3px 0 0 0', fontSize: 13, color: 'var(--neutral-500)' }}>
             {currentUser.role === 'admin'
               ? '👑 Administrator: Freely message all users. Messages can be edited within 1 hr, deleted for everyone within 1 day, and auto-delete in 30 days.'
               : currentUser.role === 'moderator'
@@ -457,16 +496,15 @@ export default function MessagesPage() {
           </p>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <UserStatusPicker />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <button
             type="button"
             className="btn btn-brand btn-sm"
             onClick={() => setIsConnectModalOpen(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            Connect by Username
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <span>+ Connect</span>
           </button>
         </div>
       </div>
@@ -569,17 +607,19 @@ export default function MessagesPage() {
             <>
               {/* Chat Header */}
               <div className="msg-main-header">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
                   <button
                     type="button"
-                    className="btn btn-outline btn-sm mobile-only-btn"
+                    className="msg-back-btn"
                     onClick={() => setMobileShowChat(false)}
-                    style={{ padding: '4px 8px', marginRight: 4 }}
+                    aria-label="Back to conversations"
                   >
-                    ←
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M19 12H5M12 19l-7-7 7-7" />
+                    </svg>
                   </button>
-                  <div className="msg-contact-avatar-wrap">
-                    <div className="msg-contact-avatar" style={{ width: 36, height: 36, fontSize: 13 }}>
+                  <div className="msg-contact-avatar-wrap" style={{ flexShrink: 0 }}>
+                    <div className="msg-contact-avatar" style={{ width: 38, height: 38, fontSize: 13.5 }}>
                       {getInitials(selectedContact.fullName)}
                     </div>
                     <span
@@ -587,32 +627,60 @@ export default function MessagesPage() {
                       title={getStatusOption(selectedContact.status).label}
                     />
                   </div>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--neutral-900)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span>{selectedContact.fullName}</span>
-                      <span className={`badge badge-${selectedContact.role}`} style={{ fontSize: 10, padding: '1px 6px' }}>
-                        {selectedContact.role === 'admin' ? '👑 Admin' : selectedContact.role === 'moderator' ? '⚡ Moderator' : '👤 Staff'}
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--neutral-900)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {selectedContact.fullName}
+                      </span>
+                      <span className={`badge badge-${selectedContact.role}`} style={{ fontSize: 9.5, padding: '1px 6px', flexShrink: 0 }}>
+                        {selectedContact.role === 'admin' ? '👑 Admin' : selectedContact.role === 'moderator' ? '⚡ Mod' : '👤 Staff'}
                       </span>
                     </div>
-                    <div style={{ fontSize: 11.5, color: 'var(--neutral-400)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span>@{selectedContact.username}</span>
-                      <span>•</span>
+                    <div style={{ fontSize: 11.5, color: 'var(--neutral-400)', display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', whiteSpace: 'nowrap' }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                         <span className={`status-dot status-dot-${selectedContact.status || 'active'}`} style={{ width: 7, height: 7 }} />
                         <span style={{ color: getStatusOption(selectedContact.status).color, fontWeight: 600 }}>
                           {getStatusOption(selectedContact.status).label}
                         </span>
                       </span>
-                      {selectedContact.department ? <span>• {selectedContact.department}</span> : null}
+                      <span>•</span>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>@{selectedContact.username}</span>
                     </div>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                   <div className="msg-e2e-badge" title="End-to-End Encrypted. Only you and this recipient can decrypt messages.">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                    <span>E2EE Active</span>
+                    <span className="msg-e2e-label">E2EE Active</span>
                   </div>
+
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    onClick={() => {
+                      setDeleteChatMode('for-me');
+                      setDeleteChatModalOpen(true);
+                    }}
+                    title="Delete this entire conversation"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      color: 'var(--error, #ef4444)',
+                      borderColor: 'rgba(239, 68, 68, 0.3)',
+                      padding: '5px 9px',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      borderRadius: 8,
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                    <span>Delete Chat</span>
+                  </button>
                 </div>
               </div>
 
@@ -650,12 +718,16 @@ export default function MessagesPage() {
                         )}
                         <div className={`msg-row ${isMe ? 'sent' : 'received'}`}>
                           <div className="msg-bubble-wrap">
-                            <div className="msg-bubble">
+                            <div
+                              className="msg-bubble"
+                              onClick={() => isMe ? setActiveBubbleActionsId(prev => prev === m.id ? null : m.id) : undefined}
+                              title={isMe ? "Tap message to view edit/delete actions" : undefined}
+                            >
                               <div>{m.text}</div>
 
                               {/* Linked Task Card if attached */}
                               {m.task && (
-                                <div className="msg-task-card">
+                                <div className="msg-task-card" onClick={e => e.stopPropagation()}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: 'var(--brand-700)', marginBottom: 2 }}>
                                     <span>📋</span> LINKED TASK REPORT
                                   </div>
@@ -697,8 +769,8 @@ export default function MessagesPage() {
                               </div>
                             </div>
 
-                            {/* Message Hover Actions */}
-                            <div className="msg-bubble-actions">
+                            {/* Message Actions */}
+                            <div className={`msg-bubble-actions ${activeBubbleActionsId === m.id ? 'active' : ''}`}>
                               {canEdit && (
                                 <button
                                   type="button"
@@ -706,6 +778,7 @@ export default function MessagesPage() {
                                   onClick={() => {
                                     setEditingMessage(m);
                                     setDraft(m.text);
+                                    setActiveBubbleActionsId(null);
                                   }}
                                   title="Edit message (available for 1 hour)"
                                 >
@@ -715,7 +788,10 @@ export default function MessagesPage() {
                               <button
                                 type="button"
                                 className="msg-action-btn delete"
-                                onClick={() => setDeleteModalMsg(m)}
+                                onClick={() => {
+                                  setDeleteModalMsg(m);
+                                  setActiveBubbleActionsId(null);
+                                }}
                                 title="Delete message"
                               >
                                 🗑️ Delete
@@ -772,13 +848,15 @@ export default function MessagesPage() {
                   {!editingMessage && (
                     <button
                       type="button"
-                      className="btn btn-outline"
+                      className="msg-attach-btn"
                       onClick={() => setIsTaskPickerOpen(true)}
-                      style={{ padding: '8px 12px', borderRadius: 20, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}
                       title="Link a Task Report so recipient can view progress notes and reports"
+                      aria-label="Link a Task Report"
                     >
-                      <span>📎</span>
-                      <span>Link Task</span>
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                      </svg>
+                      <span className="msg-attach-label">Link Task</span>
                     </button>
                   )}
 
@@ -790,10 +868,9 @@ export default function MessagesPage() {
                     placeholder={
                       editingMessage
                         ? 'Update your message…'
-                        : `Type an encrypted message to ${selectedContact.fullName.split(' ')[0]}…`
+                        : `Message ${selectedContact.fullName.split(' ')[0]}…`
                     }
                     disabled={isSending}
-                    autoFocus
                   />
                   <button
                     type="submit"
@@ -803,14 +880,14 @@ export default function MessagesPage() {
                     title={editingMessage ? 'Save Edit' : 'Send'}
                   >
                     {editingMessage ? (
-                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
                     ) : (
-                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                     )}
                   </button>
                 </form>
 
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div className="msg-input-footer-hint" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div className="msg-security-hint">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                     <span>AES-GCM 256-bit E2EE • Only you & recipient can read</span>
@@ -1107,6 +1184,197 @@ export default function MessagesPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── 5. Delete Chat Confirmation Modal ── */}
+      {deleteChatModalOpen && selectedContact && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setDeleteChatModalOpen(false)}
+          style={{
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            background: 'rgba(15, 23, 42, 0.55)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            zIndex: 1100,
+          }}
+        >
+          <div
+            className="modal"
+            style={{
+              maxWidth: 440,
+              width: '100%',
+              borderRadius: 20,
+              padding: '24px 24px 20px',
+              border: '1px solid var(--border-color)',
+              boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.35)',
+              background: 'var(--bg-surface)',
+              position: 'relative',
+              animation: 'fadeInDown 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Top Close Button */}
+            <button
+              className="btn-close"
+              onClick={() => setDeleteChatModalOpen(false)}
+              style={{ position: 'absolute', top: 18, right: 18 }}
+              aria-label="Close"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+
+            {/* Glowing Trash Icon */}
+            <div
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: 14,
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.22)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ef4444',
+                marginBottom: 16,
+              }}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                <line x1="10" y1="11" x2="10" y2="17" />
+                <line x1="14" y1="11" x2="14" y2="17" />
+              </svg>
+            </div>
+
+            <h3 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 6px 0', color: 'var(--neutral-900)' }}>
+              Delete Conversation
+            </h3>
+
+            <p style={{ fontSize: 13, color: 'var(--neutral-500)', lineHeight: 1.5, margin: '0 0 18px 0' }}>
+              Messages with <strong>{selectedContact.fullName}</strong> (@{selectedContact.username}) will be removed. Choose how you want to delete this chat.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 22 }}>
+              {/* Option 1: Delete for me */}
+              <div
+                onClick={() => setDeleteChatMode('for-me')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 12,
+                  padding: '12px 14px',
+                  borderRadius: 12,
+                  cursor: 'pointer',
+                  border: deleteChatMode === 'for-me' ? '2px solid var(--brand-500)' : '1.5px solid var(--border-color)',
+                  background: deleteChatMode === 'for-me' ? 'rgba(99, 102, 241, 0.06)' : 'var(--bg-surface-sub)',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <div
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: '50%',
+                    border: deleteChatMode === 'for-me' ? '5px solid var(--brand-600)' : '2px solid var(--neutral-400)',
+                    background: '#ffffff',
+                    marginTop: 2,
+                    flexShrink: 0,
+                    transition: 'all 0.15s ease',
+                  }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--neutral-900)' }}>
+                    Delete for me
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--neutral-500)', marginTop: 2, lineHeight: 1.4 }}>
+                    Clears the message history on your device only. {selectedContact.fullName.split(' ')[0]} keeps their copy.
+                  </div>
+                </div>
+              </div>
+
+              {/* Option 2: Delete for everyone */}
+              <div
+                onClick={() => setDeleteChatMode('for-everyone')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 12,
+                  padding: '12px 14px',
+                  borderRadius: 12,
+                  cursor: 'pointer',
+                  border: deleteChatMode === 'for-everyone' ? '2px solid #ef4444' : '1.5px solid var(--border-color)',
+                  background: deleteChatMode === 'for-everyone' ? 'rgba(239, 68, 68, 0.08)' : 'var(--bg-surface-sub)',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <div
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: '50%',
+                    border: deleteChatMode === 'for-everyone' ? '5px solid #ef4444' : '2px solid var(--neutral-400)',
+                    background: '#ffffff',
+                    marginTop: 2,
+                    flexShrink: 0,
+                    transition: 'all 0.15s ease',
+                  }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: '#ef4444' }}>
+                    Delete for everyone
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--neutral-500)', marginTop: 2, lineHeight: 1.4 }}>
+                    Permanently purges all messages in this conversation for both you and {selectedContact.fullName.split(' ')[0]}.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, alignItems: 'center' }}>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => setDeleteChatModalOpen(false)}
+                disabled={isDeletingChat}
+                style={{ padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600 }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={handleDeleteChat}
+                disabled={isDeletingChat}
+                style={{
+                  background: '#ef4444',
+                  color: '#ffffff',
+                  border: 'none',
+                  fontWeight: 700,
+                  fontSize: 13,
+                  padding: '8px 18px',
+                  borderRadius: 10,
+                  boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                {isDeletingChat ? (
+                  <span>Deleting…</span>
+                ) : (
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    <span>Delete Chat</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

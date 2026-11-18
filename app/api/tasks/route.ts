@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/db';
 import { cacheGet, cacheSet, cacheInvalidate } from '@/app/lib/cache';
+import { setUserStatus, UserPresenceStatus } from '@/app/lib/presence';
 
 export async function GET(req: NextRequest) {
   try {
@@ -173,6 +174,25 @@ export async function POST(req: NextRequest) {
 
     // Invalidate tasks cache immediately across all users
     cacheInvalidate('tasks');
+
+    // Update status for all users selected in this task to match busyness
+    if (busyness && Array.isArray(assigneeIds) && assigneeIds.length > 0) {
+      try {
+        await prisma.user.updateMany({
+          where: { id: { in: assigneeIds } },
+          data: { status: busyness },
+        });
+        for (const aid of assigneeIds) {
+          try {
+            setUserStatus(aid, busyness as UserPresenceStatus);
+          } catch {}
+        }
+        cacheInvalidate('presence');
+        cacheInvalidate('users');
+      } catch (statusErr) {
+        console.error('Failed to update assignee status:', statusErr);
+      }
+    }
 
     return NextResponse.json({
       ...task,

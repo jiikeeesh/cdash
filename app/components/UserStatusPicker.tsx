@@ -49,9 +49,20 @@ export const USER_STATUS_OPTIONS: UserStatusOption[] = [
   },
 ];
 
+export const OFFLINE_STATUS_OPTION: UserStatusOption = {
+  key: 'offline',
+  label: 'Offline',
+  description: 'Not currently active',
+  color: '#94a3b8',
+  dotClass: 'status-dot-offline',
+};
+
 export function getStatusOption(statusKey?: string): UserStatusOption {
+  if (!statusKey || statusKey === 'offline') {
+    return OFFLINE_STATUS_OPTION;
+  }
   const found = USER_STATUS_OPTIONS.find((s) => s.key === statusKey);
-  return found || USER_STATUS_OPTIONS[0]; // defaults to Live / Active
+  return found || OFFLINE_STATUS_OPTION;
 }
 
 export default function UserStatusPicker({ compact = false }: { compact?: boolean }) {

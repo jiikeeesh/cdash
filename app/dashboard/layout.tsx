@@ -171,7 +171,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         await fetch('/api/presence', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: currentUser.id, status: newStatus }),
+          body: JSON.stringify({ userId: currentUser.id, status: newStatus, manual: true }),
         });
       } catch (e) {}
     }
@@ -205,11 +205,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     const pingAndFetchPresence = async () => {
       try {
-        await fetch('/api/presence', {
+        const pingRes = await fetch('/api/presence', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ userId: currentUser.id, status: userStatus }),
         });
+        if (pingRes.ok) {
+          const pingData = await pingRes.json();
+          if (pingData.status && pingData.status !== userStatus) {
+            setUserStatusState(pingData.status);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('cdash_user_status', pingData.status);
+            }
+          }
+        }
 
         const res = await fetch(`/api/presence?userId=${currentUser.id}&role=${currentUser.role}&status=${userStatus}`);
         if (res.ok) {
@@ -678,6 +687,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </Link>
 
             <div className="insta-header-actions">
+              {/* User Status Trigger on Mobile Header */}
+              <button
+                type="button"
+                className="topbar-status-pill"
+                onClick={() => setIsStatusMenuOpen(prev => !prev)}
+                title="Change your presence status"
+                style={{ padding: '4px 8px', fontSize: 11.5, gap: 5, borderRadius: 20 }}
+              >
+                <span className={`status-indicator-dot ${currentStatusConfig.dotClass}`} style={{ width: 7, height: 7 }} />
+                <span>{currentStatusConfig.badge}</span>
+              </button>
+
               {/* Notification Bell */}
               <button
                 type="button"

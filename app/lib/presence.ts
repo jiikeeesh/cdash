@@ -1,5 +1,5 @@
 // Real-time user presence tracking in memory
-export type UserPresenceStatus = 'active' | 'away' | 'busy' | 'dnd' | 'ooo';
+export type UserPresenceStatus = 'active' | 'away' | 'busy' | 'dnd' | 'ooo' | 'offline';
 
 const globalForPresence = globalThis as unknown as {
   userHeartbeats: Map<string, number>;
@@ -60,7 +60,7 @@ export function getAllPresenceMap(): Record<string, { isOnline: boolean; lastAct
     result[userId] = {
       isOnline: online,
       lastActive: ts,
-      status: online ? (globalForPresence.userStatuses.get(userId) || 'active') : 'active',
+      status: online ? (globalForPresence.userStatuses.get(userId) || 'active') : 'offline',
     };
   }
   return result;

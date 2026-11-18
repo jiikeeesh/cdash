@@ -1,8 +1,26 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAuth } from '../../lib/auth-context';
-import UserStatusPicker, { USER_STATUS_OPTIONS, getStatusOption } from '../../components/UserStatusPicker';
+import { USER_STATUS_OPTIONS, getStatusOption } from '../../components/UserStatusPicker';
+
+// ── Shared Constants ───────────────────────────────────────────────────────
+const STATUS_OPTIONS: { value: TaskStatus | 'all'; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'requested', label: '⏳ Requested' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'in-progress', label: 'In Progress' },
+  { value: 'review', label: 'Review' },
+  { value: 'done', label: 'Done' },
+];
+
+const PRIORITY_OPTIONS: { value: TaskPriority | 'all'; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'critical', label: '🔴 Critical' },
+  { value: 'high', label: '🟠 High' },
+  { value: 'medium', label: '🟡 Medium' },
+  { value: 'low', label: '🟢 Low' },
+];
 
 // ── Types ──────────────────────────────────────────────────────────────────
 type CalView = 'month' | 'week' | 'day';
@@ -20,10 +38,90 @@ interface Task {
 interface CalUser { id: string; fullName: string; username: string; role: string; createdBy?: string; department?: string; email?: string; }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-function toDateStr(d: Date): string { return d.toISOString().slice(0, 10); }
+function toDateStr(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 function getTasksForDate(tasks: Task[], dateStr: string): Task[] {
-  return tasks.filter(t => t.dueDate.slice(0, 10) === dateStr);
+  return tasks.filter(t => {
+    try {
+      const d = new Date(t.dueDate);
+      if (isNaN(d.getTime())) return t.dueDate.slice(0, 10) === dateStr;
+      return toDateStr(d) === dateStr;
+    } catch {
+      return t.dueDate.slice(0, 10) === dateStr;
+    }
+  });
+}
+
+function parseTaskDateTime(task?: Task, fallbackDateStr?: string) {
+  if (!task || !task.dueDate) {
+    const dStr = fallbackDateStr || toDateStr(new Date());
+    return {
+      startDate: dStr,
+      startTime: '10:30 AM',
+      endDate: dStr,
+      endTime: '11:00 AM',
+      allDay: false,
+    };
+  }
+
+  const d = new Date(task.dueDate);
+  if (isNaN(d.getTime())) {
+    const dStr = fallbackDateStr || toDateStr(new Date());
+    return {
+      startDate: dStr,
+      startTime: '10:30 AM',
+      endDate: dStr,
+      endTime: '11:00 AM',
+      allDay: false,
+    };
+  }
+
+  const startDate = toDateStr(d);
+  const isAllDay = d.getHours() === 0 && d.getMinutes() === 0;
+
+  let h = d.getHours();
+  const m = d.getMinutes();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  const roundedM = m < 15 ? '00' : m < 45 ? '30' : '00';
+  const finalH = m >= 45 ? (h12 === 12 ? 1 : h12 + 1) : h12;
+  const startTime = `${String(finalH).padStart(2, '0')}:${roundedM} ${ampm}`;
+
+  const endD = new Date(d.getTime() + 30 * 60 * 1000);
+  const eh = endD.getHours();
+  const em = endD.getMinutes();
+  const eampm = eh >= 12 ? 'PM' : 'AM';
+  const eh12 = eh % 12 === 0 ? 12 : eh % 12;
+  const eroundedM = em < 15 ? '00' : em < 45 ? '30' : '00';
+  const efinalH = em >= 45 ? (eh12 === 12 ? 1 : eh12 + 1) : eh12;
+  const endTime = `${String(efinalH).padStart(2, '0')}:${eroundedM} ${eampm}`;
+
+  return {
+    startDate,
+    startTime,
+    endDate: startDate,
+    endTime,
+    allDay: isAllDay,
+  };
+}
+
+function parseTaskDescription(task?: Task) {
+  if (!task || !task.description) {
+    return { location: '', description: '' };
+  }
+  const raw = task.description;
+  const locMatch = raw.match(/^📍 Location:\s*([^\n]+)/);
+  if (locMatch) {
+    const location = locMatch[1].trim();
+    const description = raw.replace(/^📍 Location:[^\n]*\n\n?/, '').trim();
+    return { location, description };
+  }
+  return { location: '', description: raw };
 }
 
 function priorityColor(p: TaskPriority): string {
@@ -74,12 +172,13 @@ function formatHour(h: number): string {
 interface ToastMsg { id: number; text: string; type: 'success' | 'error'; }
 
 // ── Task Drawer ────────────────────────────────────────────────────────────
-function TaskDrawer({ task, open, onClose, users, currentUserRole, onStatusUpdate, onEdit }: {
+function TaskDrawer({ task, open, onClose, users, currentUserRole, onStatusUpdate, onEdit, onDelete }: {
   task: Task | null; open: boolean; onClose: () => void;
   users: CalUser[];
   currentUserRole?: string;
   onStatusUpdate: (task: Task, status: TaskStatus, note: string) => void;
   onEdit: (task: Task) => void;
+  onDelete?: (taskId: string) => void;
 }) {
   const [status, setStatus] = useState<TaskStatus>('pending');
   const [note, setNote] = useState('');
@@ -101,6 +200,7 @@ function TaskDrawer({ task, open, onClose, users, currentUserRole, onStatusUpdat
     <>
       {open && <div className="cal-drawer-backdrop" onClick={onClose} />}
       <div className={`cal-drawer ${open ? 'open' : ''}`} role="dialog" aria-modal="true">
+        <div className="cal-drawer-handle" />
         {task && (
           <>
             <div className="cal-drawer-header">
@@ -268,10 +368,22 @@ function TaskDrawer({ task, open, onClose, users, currentUserRole, onStatusUpdat
 
             <div className="cal-drawer-footer">
               {canManage && (
-                <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => onEdit(task)}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                  Edit Task
-                </button>
+                <>
+                  <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => onEdit(task)}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    Edit Task
+                  </button>
+                  {onDelete && (
+                    <button
+                      className="btn btn-outline"
+                      style={{ borderColor: 'var(--error)', color: 'var(--error)', padding: '0 12px' }}
+                      onClick={() => onDelete(task.id)}
+                      title="Delete Event"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                    </button>
+                  )}
+                </>
               )}
               <button className="btn btn-outline" style={{ flex: canManage ? 0 : 1 }} onClick={onClose}>Close</button>
             </div>
@@ -324,7 +436,7 @@ function timeTo24(timeStr: string): string {
   return `${hours.padStart(2, '0')}:${minutes}:00`;
 }
 
-function TaskFormModal({ initialDate, initialTask, initialMode, users, currentUser, onClose, onSave }: {
+function TaskFormModal({ initialDate, initialTask, initialMode, users, currentUser, onClose, onSave, onDelete }: {
   initialDate?: string;
   initialTask?: Task;
   initialMode?: 'create' | 'moderator-request';
@@ -332,6 +444,7 @@ function TaskFormModal({ initialDate, initialTask, initialMode, users, currentUs
   currentUser: { id: string; role: string; fullName: string; createdBy?: string };
   onClose: () => void;
   onSave: (form: QuickAddForm) => void;
+  onDelete?: (taskId: string) => void;
 }) {
   const isRegularUser = currentUser.role === 'user';
   const isModerator = currentUser.role === 'moderator';
@@ -377,36 +490,47 @@ function TaskFormModal({ initialDate, initialTask, initialMode, users, currentUs
       : currentUser.id)
   );
 
-  // Parse initial date & time
-  const defaultDateStr = initialTask?.dueDate ? initialTask.dueDate.slice(0, 10) : (initialDate || toDateStr(new Date()));
+  // Parse initial date & time & description
+  const initialParsed = useMemo(() => parseTaskDateTime(initialTask, initialDate), [initialTask, initialDate]);
+  const initialText = useMemo(() => parseTaskDescription(initialTask), [initialTask]);
+
   const [title, setTitle] = useState(initialTask?.title ?? '');
-  const [location, setLocation] = useState('');
-  const [startDate, setStartDate] = useState(defaultDateStr);
-  const [startTime, setStartTime] = useState('10:30 AM');
-  const [endDate, setEndDate] = useState(defaultDateStr);
-  const [endTime, setEndTime] = useState('11:00 AM');
-  const [allDay, setAllDay] = useState(false);
+  const [location, setLocation] = useState(initialText.location);
+  const [startDate, setStartDate] = useState(initialParsed.startDate);
+  const [startTime, setStartTime] = useState(initialParsed.startTime);
+  const [endDate, setEndDate] = useState(initialParsed.endDate);
+  const [endTime, setEndTime] = useState(initialParsed.endTime);
+  const [allDay, setAllDay] = useState(initialParsed.allDay);
   const [isPrivate, setIsPrivate] = useState(false);
   const [repeat, setRepeat] = useState('Never');
   const [saveToCalendar, setSaveToCalendar] = useState('Calendar');
   const [reminder, setReminder] = useState('15 minutes');
   const [showAs, setShowAs] = useState(initialTask?.busyness ?? 'busy');
-  const [syncMyStatus, setSyncMyStatus] = useState(false);
   const [priority, setPriority] = useState<TaskPriority>(initialTask?.priority ?? 'medium');
-  const [description, setDescription] = useState(initialTask?.description ?? '');
+  const [description, setDescription] = useState(initialText.description);
   const [assigneeSearch, setAssigneeSearch] = useState('');
   const [assigneeRoleFilter, setAssigneeRoleFilter] = useState<'all' | 'moderator' | 'user' | 'admin'>('all');
 
-  // Extract location if present in description
+  // Sync state whenever initialTask or initialDate changes
   useEffect(() => {
-    if (initialTask?.description) {
-      const locMatch = initialTask.description.match(/^📍 Location:\s*([^\n]+)/);
-      if (locMatch) {
-        setLocation(locMatch[1].trim());
-        setDescription(initialTask.description.replace(/^📍 Location:[^\n]*\n\n?/, ''));
+    if (initialTask) {
+      const parsed = parseTaskDateTime(initialTask, initialDate);
+      const text = parseTaskDescription(initialTask);
+      setTitle(initialTask.title || '');
+      setLocation(text.location);
+      setDescription(text.description);
+      setStartDate(parsed.startDate);
+      setStartTime(parsed.startTime);
+      setEndDate(parsed.endDate);
+      setEndTime(parsed.endTime);
+      setAllDay(parsed.allDay);
+      setShowAs(initialTask.busyness ?? 'busy');
+      setPriority(initialTask.priority ?? 'medium');
+      if (initialTask.assigneeIds && initialTask.assigneeIds.length > 0) {
+        setSelectedAssigneeIds(initialTask.assigneeIds);
       }
     }
-  }, [initialTask]);
+  }, [initialTask, initialDate]);
 
   // Assignable users pool:
   // - Admin: can add/assign all people (admins, moderators, staff users)
@@ -514,7 +638,6 @@ function TaskFormModal({ initialDate, initialTask, initialMode, users, currentUs
       reminder,
       showAs,
       busyness: showAs,
-      syncMyStatus,
       priority,
       status: finalStatus,
       assigneeIds: finalAssignees,
@@ -537,6 +660,17 @@ function TaskFormModal({ initialDate, initialTask, initialMode, users, currentUs
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
               Discard
             </button>
+            {initialTask && onDelete && (
+              <button
+                type="button"
+                className="outlook-ribbon-btn danger-discard"
+                style={{ color: 'var(--error)' }}
+                onClick={() => onDelete(initialTask.id)}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                Delete
+              </button>
+            )}
             <button type="button" className="outlook-ribbon-btn" onClick={() => appendFormat('image')} title="Attach a file or link">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
               Attach
@@ -903,19 +1037,6 @@ function TaskFormModal({ initialDate, initialTask, initialMode, users, currentUs
             </div>
           </div>
 
-          {/* Status Sync Checkbox */}
-          <div style={{ marginTop: 2, padding: '8px 12px', background: 'var(--neutral-50)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--neutral-200)' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--neutral-700)', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={syncMyStatus}
-                onChange={e => setSyncMyStatus(e.target.checked)}
-                style={{ width: 14, height: 14, accentColor: 'var(--brand-600)', cursor: 'pointer' }}
-              />
-              <span>Also change my current user status to <strong>{getStatusOption(showAs).label}</strong></span>
-            </label>
-          </div>
-
           {/* Add an email reminder hint */}
           <div style={{ fontSize: 12.5, color: 'var(--neutral-500)', display: 'flex', alignItems: 'center', gap: 6 }}>
             <span>✉️</span>
@@ -923,6 +1044,22 @@ function TaskFormModal({ initialDate, initialTask, initialMode, users, currentUs
               Add an email reminder
             </span>
           </div>
+
+          {/* Previous Comments & Notes (when editing an existing event) */}
+          {initialTask?.notes && initialTask.notes.length > 0 && (
+            <div style={{ marginTop: 8, marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--neutral-400)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
+                Previous Comments & Notes ({initialTask.notes.length})
+              </div>
+              <div style={{ maxHeight: 110, overflowY: 'auto', background: 'var(--neutral-50)', border: '1px solid var(--neutral-200)', borderRadius: 6, padding: '8px 10px', fontSize: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {initialTask.notes.map((n, idx) => (
+                  <div key={idx} style={{ padding: '6px 8px', background: 'var(--neutral-0)', borderRadius: 4, border: '1px solid var(--neutral-200)', color: 'var(--neutral-700)', whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>
+                    {n}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Rich text formatting editor */}
           <div>
@@ -974,37 +1111,33 @@ function CalSidebar({ tasks, filterStatus, filterPriority, onStatusFilter, onPri
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
   const requestedTasks = tasks.filter(t => t.status === 'requested');
-
-  const statusOptions: { value: TaskStatus | 'all'; label: string }[] = [
-    { value: 'all', label: 'All' },
-    { value: 'requested', label: '⏳ Requested' },
-    { value: 'pending', label: 'Pending' },
-    { value: 'in-progress', label: 'In Progress' },
-    { value: 'review', label: 'Review' },
-    { value: 'done', label: 'Done' },
-  ];
-  const priorityOptions: { value: TaskPriority | 'all'; label: string }[] = [
-    { value: 'all', label: 'All' },
-    { value: 'critical', label: '🔴 Critical' },
-    { value: 'high', label: '🟠 High' },
-    { value: 'medium', label: '🟡 Medium' },
-    { value: 'low', label: '🟢 Low' },
-  ];
+  const isFiltered = filterStatus !== 'all' || filterPriority !== 'all';
 
   return (
     <div>
-      {onClose && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--neutral-900)', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span>Filters</span>
+          {isFiltered && (
+            <button
+              onClick={() => { onStatusFilter('all'); onPriorityFilter('all'); }}
+              style={{ background: 'none', border: 'none', color: 'var(--brand-600)', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', padding: 0 }}
+            >
+              Reset
+            </button>
+          )}
+        </div>
+        {onClose && (
           <button className="btn-close" onClick={onClose} aria-label="Close filters">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Status filter */}
-      <div className="cal-filter-label">Status</div>
+      <div className="cal-filter-label" style={{ marginTop: 4 }}>Status</div>
       <div className="cal-filter-chips">
-        {statusOptions.map(o => (
+        {STATUS_OPTIONS.map(o => (
           <button key={o.value} className={`cal-filter-chip ${filterStatus === o.value ? 'active' : ''}`} onClick={() => onStatusFilter(o.value)}>
             {o.label}
           </button>
@@ -1014,7 +1147,7 @@ function CalSidebar({ tasks, filterStatus, filterPriority, onStatusFilter, onPri
       {/* Priority filter */}
       <div className="cal-filter-label">Priority</div>
       <div className="cal-filter-chips">
-        {priorityOptions.map(o => (
+        {PRIORITY_OPTIONS.map(o => (
           <button key={o.value} className={`cal-filter-chip ${filterPriority === o.value ? 'active' : ''}`} onClick={() => onPriorityFilter(o.value)}>
             {o.label}
           </button>
@@ -1072,30 +1205,52 @@ function CalSidebar({ tasks, filterStatus, filterPriority, onStatusFilter, onPri
 
 // ── Month View ─────────────────────────────────────────────────────────────
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const DAY_SHORT = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
-function MonthView({ tasks, currentDate, today, onDayClick, onTaskClick }: {
-  tasks: Task[]; currentDate: Date; today: string;
-  onDayClick: (ds: string) => void; onTaskClick: (t: Task) => void;
+function MonthView({
+  tasks,
+  currentDate,
+  today,
+  selectedDate,
+  onSelectDate,
+  onDayClick,
+  onTaskClick,
+  onAddForDate,
+}: {
+  tasks: Task[];
+  currentDate: Date;
+  today: string;
+  selectedDate: string;
+  onSelectDate: (ds: string) => void;
+  onDayClick: (ds: string) => void;
+  onTaskClick: (t: Task) => void;
+  onAddForDate: (ds: string) => void;
 }) {
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
   const days = useMemo(() => getMonthDays(year, month), [year, month]);
   const [expanded, setExpanded] = useState<string | null>(null);
 
+  const selectedDayTasks = useMemo(() => getTasksForDate(tasks, selectedDate), [tasks, selectedDate]);
+
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: '100%' }}>
       {/* Day name headers */}
       <div className="cal-month-grid" style={{ flex: 'none' }}>
-        {DAY_NAMES.map(d => (
-          <div key={d} className="cal-month-day-header">{d}</div>
+        {DAY_NAMES.map((d, idx) => (
+          <div key={d} className="cal-month-day-header">
+            <span className="cal-day-header-full">{d}</span>
+            <span className="cal-day-header-short">{DAY_SHORT[idx]}</span>
+          </div>
         ))}
       </div>
       {/* Day cells — scrollable */}
-      <div className="cal-month-grid" style={{ flex: 1, overflow: 'auto', gridAutoRows: '1fr' }}>
+      <div className="cal-month-grid cal-month-grid-cells" style={{ flex: 1, overflow: 'auto', gridAutoRows: '1fr' }}>
         {days.map(day => {
           const ds = toDateStr(day);
           const isOtherMonth = day.getMonth() !== month;
           const isToday = ds === today;
+          const isSelected = ds === selectedDate;
           const dayTasks = getTasksForDate(tasks, ds);
           const showAll = expanded === ds;
           const visible = showAll ? dayTasks : dayTasks.slice(0, 3);
@@ -1104,40 +1259,143 @@ function MonthView({ tasks, currentDate, today, onDayClick, onTaskClick }: {
           return (
             <div
               key={ds}
-              className={`cal-day-cell ${isOtherMonth ? 'other-month' : ''} ${isToday ? 'today' : ''}`}
-              onClick={() => onDayClick(ds)}
+              className={`cal-day-cell ${isOtherMonth ? 'other-month' : ''} ${isToday ? 'today' : ''} ${isSelected ? 'selected-day' : ''}`}
+              onClick={() => {
+                onSelectDate(ds);
+                if (typeof window !== 'undefined' && window.innerWidth > 768) {
+                  onDayClick(ds);
+                }
+              }}
             >
-              <div className="cal-day-num">{day.getDate()}</div>
-              {visible.map(t => (
-                <div
-                  key={t.id}
-                  className={`cal-task-pill priority-${t.priority}`}
-                  onClick={e => { e.stopPropagation(); onTaskClick(t); }}
-                  title={t.title}
-                >
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: statusColor(t.status), flexShrink: 0 }} />
-                  <span className="cal-task-pill-title">{t.title}</span>
-                </div>
-              ))}
-              {!showAll && extra > 0 && (
-                <button
-                  className="cal-more-link"
-                  onClick={e => { e.stopPropagation(); setExpanded(ds); }}
-                >
-                  +{extra} more
-                </button>
-              )}
-              {showAll && (
-                <button
-                  className="cal-more-link"
-                  onClick={e => { e.stopPropagation(); setExpanded(null); }}
-                >
-                  Show less
-                </button>
-              )}
+              <div className="cal-day-header-row">
+                <div className={`cal-day-num ${isSelected ? 'selected' : ''}`}>{day.getDate()}</div>
+              </div>
+
+              {/* Desktop detailed task pills (hidden on mobile <= 768px via CSS) */}
+              <div className="cal-desktop-pills">
+                {visible.map(t => (
+                  <div
+                    key={t.id}
+                    className={`cal-task-pill priority-${t.priority}`}
+                    onClick={e => { e.stopPropagation(); onTaskClick(t); }}
+                    title={t.title}
+                  >
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: statusColor(t.status), flexShrink: 0 }} />
+                    <span className="cal-task-pill-title">{t.title}</span>
+                  </div>
+                ))}
+                {!showAll && extra > 0 && (
+                  <button
+                    className="cal-more-link"
+                    onClick={e => { e.stopPropagation(); setExpanded(ds); }}
+                  >
+                    +{extra} more
+                  </button>
+                )}
+                {showAll && (
+                  <button
+                    className="cal-more-link"
+                    onClick={e => { e.stopPropagation(); setExpanded(null); }}
+                  >
+                    Show less
+                  </button>
+                )}
+              </div>
+
+              {/* Mobile micro dots (shown only on mobile <= 768px via CSS) */}
+              <div className="cal-mobile-dots">
+                {dayTasks.slice(0, 3).map(t => (
+                  <span
+                    key={t.id}
+                    className="cal-mobile-dot"
+                    style={{ background: priorityColor(t.priority) }}
+                  />
+                ))}
+                {dayTasks.length > 3 && (
+                  <span className="cal-mobile-dot-more">+{dayTasks.length - 3}</span>
+                )}
+              </div>
             </div>
           );
         })}
+      </div>
+
+      {/* Mobile Day Agenda Sheet (visible only on mobile <= 768px) */}
+      <div className="cal-mobile-agenda-sheet">
+        <div className="cal-mobile-agenda-header">
+          <div className="cal-mobile-agenda-title-wrap">
+            <span className="cal-mobile-agenda-day-name">
+              {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+            </span>
+            {selectedDate === today && (
+              <span className="cal-mobile-today-chip">Today</span>
+            )}
+            <span className="cal-mobile-agenda-task-count">
+              ({selectedDayTasks.length} {selectedDayTasks.length === 1 ? 'event' : 'events'})
+            </span>
+          </div>
+
+          <button
+            className="btn btn-sm btn-brand cal-mobile-quick-add-btn"
+            onClick={() => onAddForDate(selectedDate)}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Add
+          </button>
+        </div>
+
+        <div className="cal-mobile-agenda-list">
+          {selectedDayTasks.length === 0 ? (
+            <div className="cal-mobile-agenda-empty">
+              <span>No events scheduled for this day</span>
+              <button
+                className="cal-mobile-empty-add-link"
+                onClick={() => onAddForDate(selectedDate)}
+              >
+                + Tap to schedule event
+              </button>
+            </div>
+          ) : (
+            selectedDayTasks.map(t => (
+              <div
+                key={t.id}
+                className="cal-mobile-agenda-card"
+                onClick={() => onTaskClick(t)}
+              >
+                <span
+                  className="cal-mobile-agenda-card-stripe"
+                  style={{ background: priorityColor(t.priority) }}
+                />
+                <div className="cal-mobile-agenda-card-body">
+                  <div className="cal-mobile-agenda-card-title">{t.title}</div>
+                  <div className="cal-mobile-agenda-card-meta">
+                    <span className={`badge badge-${t.priority}`} style={{ fontSize: 10, padding: '1px 6px' }}>
+                      {t.priority}
+                    </span>
+                    <span style={{ fontSize: 11, color: statusColor(t.status), fontWeight: 600 }}>
+                      {statusLabel(t.status)}
+                    </span>
+                    {t.dueDate && (
+                      <span style={{ fontSize: 11, color: 'var(--neutral-400)' }}>
+                        {new Date(t.dueDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
+                  </div>
+                  {t.description && (
+                    <div className="cal-mobile-agenda-card-desc">
+                      {t.description}
+                    </div>
+                  )}
+                </div>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ color: 'var(--neutral-400)', flexShrink: 0 }}>
+                  <path d="M9 18l6-6-6-6"/>
+                </svg>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1297,7 +1555,39 @@ export default function CalendarPage() {
   const [quickAddMode, setQuickAddMode] = useState<'create' | 'moderator-request'>('create');
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(false);
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const today = toDateStr(new Date());
+  const [mobileSelectedDate, setMobileSelectedDate] = useState<string>(today);
+  const filterMenuRef = useRef<HTMLDivElement>(null);
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
+
+  // Close desktop filter popover when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (filterMenuRef.current && !filterMenuRef.current.contains(e.target as Node)) {
+        setFilterMenuOpen(false);
+      }
+    }
+    if (filterMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [filterMenuOpen]);
+
+  const activeFilterCount = (filterStatus !== 'all' ? 1 : 0) + (filterPriority !== 'all' ? 1 : 0);
+
+  const overdueTasksCount = useMemo(() => {
+    const todayDate = new Date(today);
+    return tasks.filter(t => t.status !== 'done' && new Date(t.dueDate) < todayDate).length;
+  }, [tasks, today]);
+
+  const upcomingTasksCount = useMemo(() => {
+    const todayDate = new Date(today);
+    const in7Days = new Date(todayDate);
+    in7Days.setDate(in7Days.getDate() + 7);
+    return tasks.filter(t => t.status !== 'done' && new Date(t.dueDate) >= todayDate && new Date(t.dueDate) <= in7Days).length;
+  }, [tasks, today]);
 
   const pushToast = useCallback((text: string, type: 'success' | 'error' = 'success') => {
     const id = Date.now();
@@ -1365,8 +1655,13 @@ export default function CalendarPage() {
       })
     });
     if (res.ok) {
-      if (form.syncMyStatus && form.busyness) {
+      if (form.busyness) {
         updateStatus(form.busyness);
+        fetch('/api/presence', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: currentUser!.id, status: form.busyness }),
+        }).catch(() => {});
       }
       loadTasks();
       pushToast(form.isRequest ? 'Event request submitted!' : 'Event scheduled successfully!');
@@ -1397,8 +1692,13 @@ export default function CalendarPage() {
       })
     });
     if (res.ok) {
-      if (form.syncMyStatus && form.busyness) {
+      if (form.busyness) {
         updateStatus(form.busyness);
+        fetch('/api/presence', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: currentUser.id, status: form.busyness }),
+        }).catch(() => {});
       }
       loadTasks();
       pushToast('Event updated!');
@@ -1429,12 +1729,36 @@ export default function CalendarPage() {
     }
   }
 
-  const today = toDateStr(new Date());
+  async function handleDeleteTask(taskId: string) {
+    if (!confirm('Are you sure you want to delete this event?')) return;
+    const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+    if (res.ok) {
+      loadTasks();
+      pushToast('Event deleted!');
+      setDrawerOpen(false);
+      setSelectedTask(null);
+      setEditingTask(null);
+      if (currentUser) {
+        fetch('/api/presence', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: currentUser.id }),
+        })
+          .then((r) => r.json())
+          .then((data) => {
+            if (data.status) updateStatus(data.status);
+          })
+          .catch(() => {});
+      }
+    } else {
+      pushToast('Failed to delete event', 'error');
+    }
+  }
 
   if (!currentUser) return <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}><div className="spinner" /></div>;
 
   return (
-    <>
+    <div className="cal-page-wrap">
       {/* Toasts */}
       <div className="toast-container">
         {toasts.map(t => <div key={t.id} className={`toast toast-${t.type}`}>{t.text}</div>)}
@@ -1449,6 +1773,7 @@ export default function CalendarPage() {
         currentUserRole={currentUser.role}
         onStatusUpdate={handleStatusUpdate}
         onEdit={t => { setEditingTask(t); setDrawerOpen(false); }}
+        onDelete={handleDeleteTask}
       />
 
       {/* Quick Add Modal (Outlook Event Details Screen) */}
@@ -1466,26 +1791,28 @@ export default function CalendarPage() {
       {/* Edit Modal (Outlook Event Details Screen) */}
       {editingTask && (
         <TaskFormModal
-          initialDate={editingTask.dueDate.slice(0, 10)}
+          initialDate={toDateStr(new Date(editingTask.dueDate))}
           initialTask={editingTask}
           users={users}
           currentUser={currentUser}
           onClose={() => setEditingTask(null)}
           onSave={handleEditSave}
+          onDelete={handleDeleteTask}
         />
       )}
 
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
         <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.4)', zIndex: 119 }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.4)', zIndex: 125 }}
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       <div className="cal-shell">
         {/* Sidebar */}
-        <aside className={`cal-sidebar ${sidebarOpen ? 'open' : ''}`}>
+        <aside className={`cal-sidebar ${sidebarOpen ? 'open' : ''} ${!desktopSidebarOpen ? 'desktop-collapsed' : ''}`}>
+          <div className="cal-drawer-handle" style={{ marginBottom: 10 }} />
           <CalSidebar
             tasks={filteredTasks}
             filterStatus={filterStatus}
@@ -1502,65 +1829,199 @@ export default function CalendarPage() {
         <div className="cal-main">
           {/* Topbar */}
           <div className="cal-topbar">
-            {/* Mobile filter toggle */}
-            <button className="cal-mobile-sidebar-btn" onClick={() => setSidebarOpen(p => !p)}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="12" y1="18" x2="20" y2="18"/>
-              </svg>
-              Filters
-            </button>
-
-            {/* View tabs */}
-            <div className="cal-view-tabs">
-              {(['month', 'week', 'day'] as CalView[]).map(v => (
-                <button key={v} className={`cal-view-tab ${view === v ? 'active' : ''}`} onClick={() => setView(v)}>
-                  {v.charAt(0).toUpperCase() + v.slice(1)}
-                </button>
-              ))}
-            </div>
-
-            {/* Nav */}
-            <div className="cal-nav-row">
-              <button className="cal-nav-btn" onClick={() => navigate(-1)} aria-label="Previous">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M15 18l-6-6 6-6"/></svg>
-              </button>
-              <button className="cal-nav-btn cal-today-btn" onClick={() => navigate(0)}>Today</button>
-              <button className="cal-nav-btn" onClick={() => navigate(1)} aria-label="Next">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M9 18l6-6-6-6"/></svg>
-              </button>
+            {/* Topbar Row 1: Nav & View Tabs */}
+            <div className="cal-topbar-row-1">
+              {/* Period title */}
               <span className="cal-period-label">{periodLabel()}</span>
+
+              {/* Nav */}
+              <div className="cal-nav-row">
+                <button className="cal-nav-btn" onClick={() => navigate(-1)} aria-label="Previous">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M15 18l-6-6 6-6"/></svg>
+                </button>
+                <button className="cal-nav-btn cal-today-btn" onClick={() => navigate(0)}>Today</button>
+                <button className="cal-nav-btn" onClick={() => navigate(1)} aria-label="Next">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M9 18l6-6-6-6"/></svg>
+                </button>
+              </div>
+
+              {/* View tabs (desktop) */}
+              <div className="cal-view-tabs cal-view-tabs-desktop">
+                {(['month', 'week', 'day'] as CalView[]).map(v => (
+                  <button key={v} className={`cal-view-tab ${view === v ? 'active' : ''}`} onClick={() => setView(v)}>
+                    {v.charAt(0).toUpperCase() + v.slice(1)}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <div style={{ flex: 1 }} />
+            {/* Topbar Row 2: Filters & Actions */}
+            <div className="cal-topbar-row-2">
+              {/* View tabs (mobile only) */}
+              <div className="cal-view-tabs cal-view-tabs-mobile">
+                {(['month', 'week', 'day'] as CalView[]).map(v => (
+                  <button key={v} className={`cal-view-tab ${view === v ? 'active' : ''}`} onClick={() => setView(v)}>
+                    {v.charAt(0).toUpperCase() + v.slice(1)}
+                  </button>
+                ))}
+              </div>
 
-            {/* Action buttons with permission boundaries */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <UserStatusPicker />
-              {currentUser.role === 'moderator' && (
+              <div className="cal-topbar-left-controls">
+                {/* Desktop sidebar toggle button */}
                 <button
-                  className="btn btn-outline cal-add-btn"
+                  className={`cal-desktop-sidebar-btn ${desktopSidebarOpen ? 'active' : ''}`}
+                  onClick={() => setDesktopSidebarOpen(p => !p)}
+                  title={desktopSidebarOpen ? 'Hide sidebar' : 'Show full sidebar'}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                    <line x1="9" y1="3" x2="9" y2="21"/>
+                  </svg>
+                  <span className="cal-btn-text-desktop">Sidebar</span>
+                </button>
+
+                {/* Filter Menu dropdown (Desktop & Tablet) */}
+                <div className="cal-filter-dropdown-wrap" ref={filterMenuRef}>
+                  <button
+                    className={`cal-filter-menu-btn ${activeFilterCount > 0 ? 'active' : ''}`}
+                    onClick={() => setFilterMenuOpen(p => !p)}
+                    aria-expanded={filterMenuOpen}
+                    title="Filter calendar events"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                    </svg>
+                    <span>Filter</span>
+                    {activeFilterCount > 0 && (
+                      <span className="cal-filter-badge">{activeFilterCount}</span>
+                    )}
+                    <svg
+                      width="11"
+                      height="11"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      style={{
+                        transform: filterMenuOpen ? 'rotate(180deg)' : 'none',
+                        transition: 'transform 0.18s ease'
+                      }}
+                    >
+                      <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                  </button>
+
+                  {/* Filter Dropdown Popover */}
+                  {filterMenuOpen && (
+                    <div className="cal-filter-dropdown-popover">
+                      <div className="cal-filter-dropdown-header">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13, color: 'var(--neutral-900)' }}>
+                          <span>Filter Events</span>
+                          {activeFilterCount > 0 && (
+                            <span className="cal-filter-badge">{activeFilterCount} active</span>
+                          )}
+                        </div>
+                        {activeFilterCount > 0 && (
+                          <button
+                            className="cal-filter-reset-link"
+                            onClick={() => { setFilterStatus('all'); setFilterPriority('all'); }}
+                          >
+                            Reset All
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="cal-filter-dropdown-content">
+                        <div className="cal-filter-label" style={{ marginTop: 0 }}>Status</div>
+                        <div className="cal-filter-chips">
+                          {STATUS_OPTIONS.map(o => (
+                            <button
+                              key={o.value}
+                              className={`cal-filter-chip ${filterStatus === o.value ? 'active' : ''}`}
+                              onClick={() => setFilterStatus(o.value)}
+                            >
+                              {o.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="cal-filter-label">Priority</div>
+                        <div className="cal-filter-chips">
+                          {PRIORITY_OPTIONS.map(o => (
+                            <button
+                              key={o.value}
+                              className={`cal-filter-chip ${filterPriority === o.value ? 'active' : ''}`}
+                              onClick={() => setFilterPriority(o.value)}
+                            >
+                              {o.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        {(overdueTasksCount > 0 || upcomingTasksCount > 0) && (
+                          <div className="cal-filter-stat-summary">
+                            {overdueTasksCount > 0 && (
+                              <div className="cal-stat-pill overdue">
+                                <span>⚠ Overdue</span>
+                                <strong>{overdueTasksCount}</strong>
+                              </div>
+                            )}
+                            <div className="cal-stat-pill upcoming">
+                              <span>📅 Next 7 Days</span>
+                              <strong>{upcomingTasksCount}</strong>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Mobile Filter Drawer Toggle */}
+                <button
+                  className={`cal-mobile-sidebar-btn ${activeFilterCount > 0 ? 'active' : ''}`}
+                  onClick={() => setSidebarOpen(p => !p)}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                  </svg>
+                  <span>Filters</span>
+                  {activeFilterCount > 0 && (
+                    <span className="cal-filter-badge">{activeFilterCount}</span>
+                  )}
+                </button>
+              </div>
+
+              <div className="cal-topbar-spacer" />
+
+              {/* Action buttons with permission boundaries */}
+              <div className="cal-topbar-right-controls">
+                {currentUser.role === 'moderator' && (
+                  <button
+                    className="btn btn-outline cal-add-btn cal-req-btn"
+                    onClick={() => {
+                      setQuickAddDate(today);
+                      setQuickAddMode('moderator-request');
+                      setQuickAddOpen(true);
+                    }}
+                    title="Request Admin to assign or collaborate with other moderators"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    <span className="cal-btn-text">Request</span>
+                  </button>
+                )}
+                <button
+                  className="btn btn-brand cal-add-btn"
                   onClick={() => {
                     setQuickAddDate(today);
-                    setQuickAddMode('moderator-request');
+                    setQuickAddMode('create');
                     setQuickAddOpen(true);
                   }}
-                  title="Request Admin to assign or collaborate with other moderators"
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                  Request from Admin
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  <span className="cal-btn-text">{currentUser.role === 'user' ? 'Request Event' : 'Add Event'}</span>
                 </button>
-              )}
-              <button
-                className="btn btn-brand cal-add-btn"
-                onClick={() => {
-                  setQuickAddDate(today);
-                  setQuickAddMode('create');
-                  setQuickAddOpen(true);
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                {currentUser.role === 'user' ? 'Request Event' : 'Add Event'}
-              </button>
+              </div>
             </div>
           </div>
 
@@ -1571,8 +2032,11 @@ export default function CalendarPage() {
                 tasks={filteredTasks}
                 currentDate={currentDate}
                 today={today}
+                selectedDate={mobileSelectedDate}
+                onSelectDate={setMobileSelectedDate}
                 onDayClick={ds => { setQuickAddDate(ds); setQuickAddMode('create'); setQuickAddOpen(true); }}
                 onTaskClick={t => { setSelectedTask(t); setDrawerOpen(true); }}
+                onAddForDate={ds => { setQuickAddDate(ds); setQuickAddMode('create'); setQuickAddOpen(true); }}
               />
             )}
             {view === 'week' && (
@@ -1596,6 +2060,6 @@ export default function CalendarPage() {
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

@@ -1,6 +1,9 @@
 // POST /api/auth/login
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/db';
+import { touchPresence, setUserStatus, UserPresenceStatus } from '@/app/lib/presence';
+import { cacheInvalidate } from '@/app/lib/cache';
+import { getActiveTaskBusynessForUser } from '@/app/lib/task-status';
 
 export async function POST(req: NextRequest) {
   try {
@@ -20,8 +23,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Incorrect password' }, { status: 401 });
     }
 
-    // Return user (exclude password)
-    const { password: _pw, ...safeUser } = user;
+    // Check if user currently has an assigned task/event scheduled for right now
+    const activeBusyness = await getActiveTaskBusynessForUser(user.id);
+    const initialStatus: UserPresenceStatus = (activeBusyness as UserPresenceStatus) || 'active';
+
+    // Update status in database to active (or task busyness) upon login
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: { status: initialStatus },
+    });
+
+    // Register user in presence memory immediately
+    setUserStatus(user.id, initialStatus);
+    touchPresence(user.id, initialStatus);
+
+    cacheInvalidate('presence');
+    cacheInvalidate('users');
+
+    // Return user (exclude password) with active status
+    const { password: _pw, ...safeUser } = updatedUser;
     return NextResponse.json({ user: safeUser });
   } catch (e: any) {
     console.error('Login route error:', e);

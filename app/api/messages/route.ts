@@ -27,7 +27,21 @@ export async function GET(req: NextRequest) {
       // Non-blocking cleanup
     }
 
-    // ── 2. Fetch messages between userId and peerId ──
+    // ── 2. Mark unread messages sent by peer to current user as read FIRST ──
+    try {
+      await prisma.message.updateMany({
+        where: {
+          senderId: peerId,
+          receiverId: userId,
+          read: false,
+        },
+        data: { read: true },
+      });
+    } catch (e) {
+      // Non-blocking
+    }
+
+    // ── 3. Fetch messages between userId and peerId (with up-to-date read receipts) ──
     const messages = await prisma.message.findMany({
       where: {
         AND: [
@@ -62,16 +76,6 @@ export async function GET(req: NextRequest) {
           },
         },
       },
-    });
-
-    // Mark unread messages sent by peer as read
-    await prisma.message.updateMany({
-      where: {
-        senderId: peerId,
-        receiverId: userId,
-        read: false,
-      },
-      data: { read: true },
     });
 
     // Format task reports notes from JSON string to array
@@ -173,5 +177,70 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error('Error in POST /api/messages:', error);
     return NextResponse.json({ error: 'Failed to send message' }, { status: 500 });
+  }
+}
+
+// DELETE /api/messages?userId=...&peerId=...&mode=for-me|for-everyone
+export async function DELETE(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const userId = searchParams.get('userId');
+    const peerId = searchParams.get('peerId');
+    const mode = searchParams.get('mode') || 'for-me';
+
+    if (!userId || !peerId) {
+      return NextResponse.json({ error: 'Missing userId or peerId' }, { status: 400 });
+    }
+
+    if (mode === 'for-everyone') {
+      // Delete all messages between both users completely
+      await prisma.message.deleteMany({
+        where: {
+          OR: [
+            { senderId: userId, receiverId: peerId },
+            { senderId: peerId, receiverId: userId },
+          ],
+        },
+      });
+      return NextResponse.json({ success: true, message: 'Chat deleted for everyone' });
+    }
+
+    // Default 'for-me':
+    // 1. Mark messages sent by userId as deletedForSender
+    await prisma.message.updateMany({
+      where: {
+        senderId: userId,
+        receiverId: peerId,
+      },
+      data: {
+        deletedForSender: true,
+      },
+    });
+
+    // 2. Mark messages received by userId as deletedForReceiver
+    await prisma.message.updateMany({
+      where: {
+        senderId: peerId,
+        receiverId: userId,
+      },
+      data: {
+        deletedForReceiver: true,
+      },
+    });
+
+    // 3. Permanently purge any records where both parties have deleted it
+    await prisma.message.deleteMany({
+      where: {
+        OR: [
+          { senderId: userId, receiverId: peerId, deletedForSender: true, deletedForReceiver: true },
+          { senderId: peerId, receiverId: userId, deletedForSender: true, deletedForReceiver: true },
+        ],
+      },
+    });
+
+    return NextResponse.json({ success: true, message: 'Chat deleted for you' });
+  } catch (error) {
+    console.error('Error in DELETE /api/messages:', error);
+    return NextResponse.json({ error: 'Failed to delete chat' }, { status: 500 });
   }
 }

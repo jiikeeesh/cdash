@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth, type SafeUser } from '../../lib/auth-context';
-import UserStatusPicker, { USER_STATUS_OPTIONS, getStatusOption } from '../../components/UserStatusPicker';
+import { USER_STATUS_OPTIONS, getStatusOption } from '../../components/UserStatusPicker';
 
 type TaskStatus   = 'pending' | 'in-progress' | 'review' | 'done' | 'requested';
 type TaskPriority = 'low' | 'medium' | 'high' | 'critical';
@@ -918,8 +918,24 @@ export default function TasksPage() {
       onConfirm: async () => {
         setConfirmState(null);
         const res = await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
-        if (res.ok) { push('info', 'Task deleted'); loadTasks(); }
-        else push('error', 'Failed to delete');
+        if (res.ok) {
+          push('info', 'Task deleted');
+          loadTasks();
+          if (currentUser) {
+            fetch('/api/presence', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: currentUser.id }),
+            })
+              .then((r) => r.json())
+              .then((data) => {
+                if (data.status) updateStatus(data.status);
+              })
+              .catch(() => {});
+          }
+        } else {
+          push('error', 'Failed to delete');
+        }
       }
     });
   }
@@ -945,7 +961,6 @@ export default function TasksPage() {
           <p className="text-sm text-neutral" style={{ marginTop: 2 }}>{filtered.length} task{filtered.length !== 1 ? 's' : ''} found</p>
         </div>
         <div className="flex items-center gap-3">
-          <UserStatusPicker />
           <div className="view-toggle-group" style={{ display: 'flex', border: '1.5px solid var(--neutral-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
             {(['grid', 'list'] as const).map((v) => (
               <button

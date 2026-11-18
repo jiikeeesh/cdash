@@ -1,5 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/db';
+import { isUserOnline, getUserStatus } from '@/app/lib/presence';
+import { getActiveTaskBusynessForUser } from '@/app/lib/task-status';
+
+async function resolveContactStatus(user: { id: string; status?: string }): Promise<{ isOnline: boolean; status: string }> {
+  // If explicitly offline in DB, or not online in presence, they are offline
+  if (user.status === 'offline' || !isUserOnline(user.id)) {
+    return { isOnline: false, status: 'offline' };
+  }
+
+  // If user has an active task/event right now, prioritize task busyness
+  const taskBusyness = await getActiveTaskBusynessForUser(user.id);
+  if (taskBusyness) {
+    return { isOnline: true, status: taskBusyness };
+  }
+
+  // Live memory presence status (manual user override like 'away' or 'dnd')
+  const memStatus = getUserStatus(user.id);
+  if (memStatus === 'away' || memStatus === 'dnd') {
+    return { isOnline: true, status: memStatus };
+  }
+
+  // When task time crossed, task was deleted, or user is simply free & active
+  return { isOnline: true, status: 'active' };
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -20,8 +44,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    // 1. If an exact username search is performed (e.g. Moderator connecting with another moderator,
-    // or User connecting with someone outside their moderator's team):
+    // 1. If an exact username search is performed:
     if (exactUsername) {
       const targetUser = await prisma.user.findUnique({
         where: { username: exactUsername },
@@ -40,9 +63,17 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ contacts: [], foundByUsername: null });
       }
 
+      const { isOnline, status } = await resolveContactStatus(targetUser);
+
+      const enrichedTarget = {
+        ...targetUser,
+        status,
+        isOnline,
+      };
+
       return NextResponse.json({
-        contacts: [targetUser],
-        foundByUsername: targetUser,
+        contacts: [enrichedTarget],
+        foundByUsername: enrichedTarget,
       });
     }
 
@@ -147,8 +178,12 @@ export async function GET(req: NextRequest) {
           },
         });
 
+        const { isOnline, status: liveStatus } = await resolveContactStatus(c);
+
         return {
           ...c,
+          status: liveStatus,
+          isOnline,
           lastMessageAt: lastMsg?.createdAt || null,
           unreadCount,
         };

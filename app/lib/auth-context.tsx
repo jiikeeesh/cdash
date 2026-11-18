@@ -71,9 +71,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    if (currentUser?.id) {
+      try {
+        const payload = JSON.stringify({ userId: currentUser.id, action: 'logout' });
+        if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+          navigator.sendBeacon('/api/presence', new Blob([payload], { type: 'application/json' }));
+        } else {
+          fetch('/api/presence', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: payload,
+            keepalive: true,
+          }).catch(() => {});
+        }
+      } catch {}
+    }
     setCurrentUser(null);
     sessionStorage.removeItem(SESSION_KEY);
-  }, []);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('cdash_user_status');
+    }
+  }, [currentUser]);
 
   const refreshUser = useCallback(async () => {
     if (!currentUser) return;
