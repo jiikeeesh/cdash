@@ -2879,13 +2879,32 @@ tbody td { padding: 14px 16px; color: var(--neutral-700); vertical-align: middle
 /* ═══════════════════════════════════════════════════════════
    PREMIUM TASK MODAL & RICH ASSIGNEE SELECTOR
 ═══════════════════════════════════════════════════════════ */
+/* Task modal: sticky header/footer with scrollable body only */
 .task-modal-card {
   max-width: 640px !important;
   width: 100%;
   border-radius: var(--radius-xl);
-  overflow: hidden;
+  overflow: hidden !important;
+  overflow-y: hidden !important;
   box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25), 0 0 0 1px var(--neutral-200);
   background: var(--neutral-0);
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+}
+
+.task-modal-card .modal-body {
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.task-modal-card .task-modal-header {
+  flex-shrink: 0;
+}
+
+.task-modal-card .modal-footer {
+  flex-shrink: 0;
 }
 
 [data-theme="dark"] .task-modal-card {
@@ -4018,3 +4037,1072 @@ tbody td { padding: 14px 16px; color: var(--neutral-700); vertical-align: middle
   .cal-view-tab { padding: 5px 9px; font-size: 12px; }
   .cal-period-label { font-size: 12px; order: -1; width: 100%; margin-left: 0; margin-bottom: 4px; }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   OUTLOOK-STYLE CALENDAR EVENT MODAL
+═══════════════════════════════════════════════════════════ */
+.outlook-modal-card {
+  max-width: 720px !important;
+  width: 100%;
+  border-radius: 12px;
+  background: var(--neutral-0);
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25), 0 0 0 1px var(--neutral-200);
+  display: flex;
+  flex-direction: column;
+  max-height: 92vh;
+  overflow: hidden !important;
+}
+
+[data-theme="dark"] .outlook-modal-card {
+  background: #1e293b;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6), 0 0 0 1px #334155;
+}
+
+/* Top ribbon toolbar */
+.outlook-ribbon-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 18px;
+  background: #f1f5f9;
+  border-bottom: 1px solid var(--neutral-200);
+  flex-shrink: 0;
+}
+
+[data-theme="dark"] .outlook-ribbon-bar {
+  background: #0f172a;
+  border-bottom-color: #334155;
+}
+
+.outlook-ribbon-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.outlook-ribbon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+[data-theme="dark"] .outlook-ribbon-btn {
+  color: #cbd5e1;
+}
+
+.outlook-ribbon-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+[data-theme="dark"] .outlook-ribbon-btn:hover {
+  background: #1e293b;
+  color: #f8fafc;
+}
+
+.outlook-ribbon-btn.primary-save {
+  background: var(--brand-600);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.outlook-ribbon-btn.primary-save:hover {
+  background: var(--brand-700);
+  color: #ffffff;
+}
+
+.outlook-ribbon-btn.danger-discard:hover {
+  background: #fee2e2;
+  color: #ef4444;
+}
+
+[data-theme="dark"] .outlook-ribbon-btn.danger-discard:hover {
+  background: #450a0a;
+  color: #f87171;
+}
+
+/* Modal Body */
+.outlook-modal-body {
+  padding: 24px 30px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.outlook-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.outlook-details-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--neutral-900);
+  margin: 0;
+}
+
+[data-theme="dark"] .outlook-details-title {
+  color: #f8fafc;
+}
+
+.outlook-input-clean {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+  background: var(--neutral-0);
+  color: var(--neutral-900);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+[data-theme="dark"] .outlook-input-clean {
+  background: #0f172a;
+  border-color: #334155;
+  color: #f8fafc;
+}
+
+.outlook-input-clean:focus {
+  border-color: var(--brand-500);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.outlook-title-input {
+  font-size: 16px;
+  font-weight: 500;
+  padding: 12px 14px;
+}
+
+/* Row grids */
+.outlook-datetime-grid {
+  display: grid;
+  grid-templateColumns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 600px) {
+  .outlook-datetime-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+}
+
+.outlook-dt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.outlook-dt-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--neutral-500);
+}
+
+.outlook-dt-input-group {
+  display: flex;
+  gap: 8px;
+}
+
+.outlook-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin: 4px 0;
+}
+
+.outlook-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--neutral-700);
+  cursor: pointer;
+}
+
+[data-theme="dark"] .outlook-checkbox-label {
+  color: #cbd5e1;
+}
+
+.outlook-options-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 4px;
+}
+
+@media (max-width: 600px) {
+  .outlook-options-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Editor toolbar */
+.outlook-editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid #cbd5e1;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: #f8fafc;
+  flex-wrap: wrap;
+}
+
+[data-theme="dark"] .outlook-editor-toolbar {
+  background: #0f172a;
+  border-color: #334155;
+}
+
+.outlook-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+[data-theme="dark"] .outlook-toolbar-btn {
+  color: #94a3b8;
+}
+
+.outlook-toolbar-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+[data-theme="dark"] .outlook-toolbar-btn:hover {
+  background: #334155;
+  color: #f8fafc;
+}
+
+.outlook-toolbar-divider {
+  width: 1px;
+  height: 18px;
+  background: #cbd5e1;
+  margin: 0 4px;
+}
+
+[data-theme="dark"] .outlook-toolbar-divider {
+  background: #334155;
+}
+
+.outlook-textarea-box {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 0 0 6px 6px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  outline: none;
+  background: var(--neutral-0);
+  color: var(--neutral-900);
+  resize: vertical;
+  min-height: 110px;
+  font-family: inherit;
+}
+
+[data-theme="dark"] .outlook-textarea-box {
+  background: #0f172a;
+  border-color: #334155;
+  color: #f8fafc;
+}
+
+.outlook-textarea-box:focus {
+  border-color: var(--brand-500);
+}
+
+/* Role / Delegation banner */
+.outlook-delegation-box {
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+[data-theme="dark"] .outlook-delegation-box {
+  background: #0f172a;
+  border-color: #334155;
+}
+
+.outlook-role-tab-btn {
+  padding: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid var(--neutral-200);
+  background: var(--neutral-0);
+  color: var(--neutral-600);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.outlook-role-tab-btn.active {
+  background: var(--brand-600);
+  border-color: var(--brand-600);
+  color: #ffffff;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MESSAGING & END-TO-END ENCRYPTED CHAT (E2EE)
+═══════════════════════════════════════════════════════════ */
+.msg-shell {
+  display: flex;
+  height: calc(100vh - 125px);
+  min-height: 520px;
+  background: var(--neutral-0);
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+[data-theme="dark"] .msg-shell {
+  background: #0f172a;
+  border-color: #334155;
+}
+
+/* Left Contacts Sidebar */
+.msg-sidebar {
+  width: 340px;
+  min-width: 290px;
+  border-right: 1px solid var(--neutral-200);
+  display: flex;
+  flex-direction: column;
+  background: var(--neutral-50);
+}
+
+[data-theme="dark"] .msg-sidebar {
+  background: #1e293b;
+  border-right-color: #334155;
+}
+
+.msg-sidebar-header {
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--neutral-200);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+[data-theme="dark"] .msg-sidebar-header {
+  border-bottom-color: #334155;
+}
+
+.msg-e2e-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* Search and Connect Bar */
+.msg-search-section {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--neutral-200);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--neutral-0);
+}
+
+[data-theme="dark"] .msg-search-section {
+  background: #0f172a;
+  border-bottom-color: #334155;
+}
+
+.msg-contact-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.msg-contact-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border-left: 3px solid transparent;
+}
+
+.msg-contact-item:hover {
+  background: var(--neutral-100);
+}
+
+[data-theme="dark"] .msg-contact-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.msg-contact-item.active {
+  background: var(--brand-50, rgba(99, 102, 241, 0.08));
+  border-left-color: var(--brand-600);
+}
+
+[data-theme="dark"] .msg-contact-item.active {
+  background: rgba(99, 102, 241, 0.18);
+  border-left-color: var(--brand-400);
+}
+
+.msg-contact-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--brand-600);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.msg-contact-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.msg-contact-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 3px;
+}
+
+.msg-contact-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--neutral-900);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-theme="dark"] .msg-contact-name {
+  color: #f8fafc;
+}
+
+.msg-unread-pill {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--brand-600);
+  color: white;
+  font-size: 10.5px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Chat Main Area */
+.msg-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--neutral-0);
+  min-width: 0;
+}
+
+[data-theme="dark"] .msg-main {
+  background: #0f172a;
+}
+
+.msg-main-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--neutral-200);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--neutral-0);
+}
+
+[data-theme="dark"] .msg-main-header {
+  background: #1e293b;
+  border-bottom-color: #334155;
+}
+
+/* Messages Stream */
+.msg-stream {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #f8fafc;
+}
+
+[data-theme="dark"] .msg-stream {
+  background: #090d16;
+}
+
+.msg-row {
+  display: flex;
+  width: 100%;
+}
+
+.msg-row.sent {
+  justify-content: flex-end;
+}
+
+.msg-row.received {
+  justify-content: flex-start;
+}
+
+.msg-bubble {
+  max-width: 72%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  word-break: break-word;
+  position: relative;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.msg-row.sent .msg-bubble {
+  background: var(--brand-600);
+  color: #ffffff;
+  border-bottom-right-radius: 2px;
+}
+
+.msg-row.received .msg-bubble {
+  background: var(--neutral-0);
+  color: var(--neutral-900);
+  border: 1px solid var(--neutral-200);
+  border-bottom-left-radius: 2px;
+}
+
+[data-theme="dark"] .msg-row.received .msg-bubble {
+  background: #1e293b;
+  color: #f1f5f9;
+  border-color: #334155;
+}
+
+.msg-bubble-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  font-size: 10.5px;
+  margin-top: 4px;
+  opacity: 0.8;
+}
+
+/* Input Bar */
+.msg-input-wrap {
+  padding: 14px 20px;
+  border-top: 1px solid var(--neutral-200);
+  background: var(--neutral-0);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+[data-theme="dark"] .msg-input-wrap {
+  background: #1e293b;
+  border-top-color: #334155;
+}
+
+.msg-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.msg-text-input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1.5px solid var(--neutral-300);
+  border-radius: 24px;
+  font-size: 13.5px;
+  outline: none;
+  background: var(--neutral-50);
+  color: var(--neutral-900);
+  transition: all 0.15s ease;
+}
+
+[data-theme="dark"] .msg-text-input {
+  background: #0f172a;
+  border-color: #334155;
+  color: #f8fafc;
+}
+
+.msg-text-input:focus {
+  border-color: var(--brand-500);
+  background: var(--neutral-0);
+}
+
+[data-theme="dark"] .msg-text-input:focus {
+  background: #0f172a;
+}
+
+.msg-send-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--brand-600);
+  color: white;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.msg-send-btn:hover {
+  background: var(--brand-700);
+  transform: scale(1.05);
+}
+
+.msg-send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.msg-security-hint {
+  font-size: 11px;
+  color: var(--neutral-400);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Empty State */
+.msg-empty-chat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+  color: var(--neutral-400);
+}
+
+/* Connect by Username Modal / Box */
+.msg-connect-modal {
+  background: var(--neutral-0);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  width: 100%;
+  max-width: 440px;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--neutral-200);
+}
+
+[data-theme="dark"] .msg-connect-modal {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .msg-shell {
+    height: calc(100vh - 140px);
+    position: relative;
+  }
+  .msg-sidebar {
+    width: 100%;
+  }
+  .msg-sidebar.hide-mobile {
+    display: none;
+  }
+  .msg-main.hide-mobile {
+    display: none;
+  }
+}
+
+/* Message Hover Actions (Edit & Delete) */
+.msg-bubble-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.msg-row.sent .msg-bubble-wrap {
+  flex-direction: row-reverse;
+}
+
+.msg-bubble-actions {
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--neutral-0);
+  border: 1px solid var(--neutral-200);
+  border-radius: 16px;
+  padding: 2px 6px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
+  transition: opacity 0.15s ease;
+}
+
+[data-theme="dark"] .msg-bubble-actions {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+.msg-bubble-wrap:hover .msg-bubble-actions {
+  opacity: 1;
+}
+
+.msg-action-btn {
+  background: transparent;
+  border: none;
+  font-size: 11px;
+  color: var(--neutral-500);
+  cursor: pointer;
+  padding: 3px 5px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  transition: all 0.15s;
+}
+
+.msg-action-btn:hover {
+  background: var(--neutral-100);
+  color: var(--neutral-800);
+}
+
+[data-theme="dark"] .msg-action-btn:hover {
+  background: #334155;
+  color: #f8fafc;
+}
+
+.msg-action-btn.delete:hover {
+  color: #ef4444;
+}
+
+/* Editing active bar */
+.msg-editing-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  background: rgba(99, 102, 241, 0.1);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--brand-700);
+  font-weight: 500;
+  border-left: 3px solid var(--brand-600);
+}
+
+[data-theme="dark"] .msg-editing-bar {
+  background: rgba(99, 102, 241, 0.2);
+  color: var(--brand-400);
+}
+
+/* Linked Task Chip in input bar */
+.msg-linked-task-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  background: var(--brand-50, rgba(99, 102, 241, 0.1));
+  border: 1px solid var(--brand-200, rgba(99, 102, 241, 0.3));
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--brand-700);
+  font-weight: 600;
+}
+
+[data-theme="dark"] .msg-linked-task-chip {
+  background: rgba(99, 102, 241, 0.2);
+  color: var(--brand-300);
+}
+
+/* Task Report Card inside Message Bubble */
+.msg-task-card {
+  margin-top: 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  padding: 10px 12px;
+  color: var(--neutral-900);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.msg-row.sent .msg-task-card {
+  background: rgba(255, 255, 255, 0.95);
+  color: #1e293b;
+}
+
+[data-theme="dark"] .msg-task-card {
+  background: #0f172a;
+  border-color: #334155;
+  color: #f8fafc;
+}
+
+.msg-task-card-title {
+  font-weight: 700;
+  font-size: 13.5px;
+  margin-bottom: 4px;
+}
+
+.msg-task-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.msg-task-card-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: var(--brand-600);
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-top: 4px;
+}
+
+.msg-task-card-btn:hover {
+  background: var(--brand-700);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   USER STATUS & BUSYNESS PICKER STYLES (Matching Image)
+   ═══════════════════════════════════════════════════════════ */
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.status-dot-lg {
+  width: 14px;
+  height: 14px;
+}
+
+.status-dot-active {
+  background: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+}
+
+.status-dot-away {
+  background: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
+}
+
+.status-dot-busy {
+  background: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+}
+
+.status-dot-dnd {
+  background: #e11d48;
+  box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.2);
+}
+
+.status-dot-ooo {
+  background: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+}
+
+/* Status Selector Trigger Button */
+.user-status-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--neutral-200);
+  background: var(--surface);
+  color: var(--neutral-800);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.user-status-btn:hover {
+  border-color: var(--brand-400);
+  background: var(--neutral-50);
+}
+
+/* Status Popover Dropdown */
+.status-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 270px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: 0 12px 30px -4px rgba(0, 0, 0, 0.12), 0 6px 12px -4px rgba(0, 0, 0, 0.08);
+  padding: 8px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: fadeInDown 0.15s ease-out;
+}
+
+[data-theme="dark"] .status-dropdown-menu {
+  background: #1e293b;
+  border-color: #334155;
+  box-shadow: 0 12px 30px -4px rgba(0, 0, 0, 0.4);
+}
+
+.status-option-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+  border: 1px solid transparent;
+}
+
+.status-option-item:hover {
+  background: #f8fafc;
+}
+
+[data-theme="dark"] .status-option-item:hover {
+  background: #334155;
+}
+
+.status-option-item.selected {
+  background: #f0fdf4;
+  border-color: rgba(16, 185, 129, 0.2);
+}
+
+[data-theme="dark"] .status-option-item.selected {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.status-option-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.status-option-item.selected .status-option-title {
+  color: #059669;
+}
+
+[data-theme="dark"] .status-option-title {
+  color: #f8fafc;
+}
+
+[data-theme="dark"] .status-option-item.selected .status-option-title {
+  color: #34d399;
+}
+
+.status-option-desc {
+  font-size: 11.5px;
+  color: #64748b;
+  margin-top: 1px;
+}
+
+[data-theme="dark"] .status-option-desc {
+  color: #94a3b8;
+}
+
+.status-option-check {
+  margin-left: auto;
+  color: #059669;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MESSAGES SEEN / SENT INDICATORS
+   ═══════════════════════════════════════════════════════════ */
+.msg-receipt-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+
+.msg-receipt-sent {
+  opacity: 0.75;
+}
+
+.msg-receipt-seen {
+  color: #06b6d4;
+  font-weight: 700;
+}
+
+.msg-contact-avatar-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.msg-contact-status-dot {
+  position: absolute;
+  bottom: 0px;
+  right: 0px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+}
+
+[data-theme="dark"] .msg-contact-status-dot {
+  border-color: #1e293b;
+}
+
+
+

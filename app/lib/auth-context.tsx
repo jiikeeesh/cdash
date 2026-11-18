@@ -16,6 +16,7 @@ export interface SafeUser {
   createdBy: string;
   themeMode?: string;
   themeColor?: string;
+  status?: string; // active | away | busy | dnd | ooo
 }
 
 interface AuthContextValue {
@@ -23,6 +24,7 @@ interface AuthContextValue {
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   refreshUser: () => Promise<void>;
+  updateStatus: (newStatus: string) => Promise<boolean>;
   loading: boolean;
 }
 
@@ -85,8 +87,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch { /* silently ignore */ }
   }, [currentUser]);
 
+  const updateStatus = useCallback(async (newStatus: string): Promise<boolean> => {
+    if (!currentUser) return false;
+    try {
+      const res = await fetch('/api/users/status', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser.id, status: newStatus }),
+      });
+      if (res.ok) {
+        const updated = { ...currentUser, status: newStatus };
+        setCurrentUser(updated);
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify(updated));
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }, [currentUser]);
+
   return (
-    <AuthContext.Provider value={{ currentUser, login, logout, refreshUser, loading }}>
+    <AuthContext.Provider value={{ currentUser, login, logout, refreshUser, updateStatus, loading }}>
       {children}
     </AuthContext.Provider>
   );

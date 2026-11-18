@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth, type SafeUser } from '../../lib/auth-context';
+import UserStatusPicker, { USER_STATUS_OPTIONS, getStatusOption } from '../../components/UserStatusPicker';
 
 type TaskStatus   = 'pending' | 'in-progress' | 'review' | 'done' | 'requested';
 type TaskPriority = 'low' | 'medium' | 'high' | 'critical';
@@ -11,6 +12,7 @@ interface Task {
   assigneeIds: string[]; assignedById: string;
   assignedByName?: string; assignedByRole?: string;
   status: TaskStatus; priority: TaskPriority;
+  busyness?: string;
   dueDate: string; createdAt: string; updatedAt: string; notes: string[];
 }
 
@@ -31,37 +33,70 @@ function useToast() {
 }
 
 // ── Task Form Modal ────────────────────────────────────────────────────────
-function TaskModal({ task, users, allUsers, currentUserId, currentUserCreatedBy, canAssign, isClone, isRequest, onClose, onSave }: {
+function TaskModal({ task, users, allUsers, currentUserId, currentUserRole, currentUserCreatedBy, canAssign, isClone, isRequest, isModeratorRequest, onClose, onSave }: {
   task: Task | null; users: SafeUser[]; allUsers?: SafeUser[]; currentUserId: string;
-  currentUserCreatedBy?: string; canAssign: boolean; isClone?: boolean; isRequest?: boolean; onClose: () => void;
+  currentUserRole?: string; currentUserCreatedBy?: string; canAssign: boolean; isClone?: boolean; isRequest?: boolean; isModeratorRequest?: boolean; onClose: () => void;
   onSave: (data: any) => void;
 }) {
   const defaultDue = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
   const userPool = allUsers && allUsers.length > 0 ? allUsers : users;
-  const moderators = userPool.filter((u) => u.role === 'moderator' || u.role === 'admin');
-  const defaultModId = task?.assignedById || 
-    (currentUserCreatedBy && moderators.some(m => m.id === currentUserCreatedBy) ? currentUserCreatedBy : moderators[0]?.id || currentUserId);
+
+  // For regular users requesting a task: only show their assigned moderator(s)
+  // For moderators requesting from admin: only show admins
+  // For admins/moderators assigning a task: use their scoped user list
+  const isModerator = currentUserRole === 'moderator';
+
+  // createdBy is a comma-separated list of moderator/admin IDs assigned to this user
+  const assignedManagerIds: string[] = currentUserCreatedBy
+    ? currentUserCreatedBy.split(',').filter(Boolean)
+    : [];
+
+  const requestTargets = isModeratorRequest
+    ? userPool.filter((u) => u.role === 'admin')
+    : isRequest
+    // Show only assigned moderators (never admins) for regular user requests
+    ? userPool.filter((u) => u.role === 'moderator' && assignedManagerIds.includes(u.id))
+    : [];
+
+  // Fallback: if no assigned moderators found, show all moderators (still no admins)
+  const moderators = isModeratorRequest
+    ? requestTargets
+    : isRequest
+    ? (requestTargets.length > 0 ? requestTargets : userPool.filter((u) => u.role === 'moderator'))
+    : userPool.filter((u) => u.role === 'moderator' || u.role === 'admin');
+
+  const defaultModId = task?.assignedById ||
+    (assignedManagerIds.length > 0 && moderators.some(m => assignedManagerIds.includes(m.id))
+      ? moderators.find(m => assignedManagerIds.includes(m.id))?.id
+      : moderators[0]?.id) || currentUserId;
 
   const [selectedModerator, setSelectedModerator] = useState<string>(defaultModId);
   const [form, setForm] = useState({
     title: task?.title ?? '',
     description: task?.description ?? '',
-    assigneeIds: isRequest ? [currentUserId] : isClone ? [] : (task?.assigneeIds ?? []),
+    assigneeIds: (isRequest || isModeratorRequest) ? [currentUserId] : isClone ? [] : (task?.assigneeIds ?? []),
     priority: task?.priority ?? 'medium',
-    status: isRequest ? 'requested' : isClone ? 'pending' : (task?.status ?? 'pending'),
+    status: (isRequest || isModeratorRequest) ? 'requested' : isClone ? 'pending' : (task?.status ?? 'pending'),
+    busyness: task?.busyness ?? 'busy',
     dueDate: task ? task.dueDate.slice(0, 10) : defaultDue,
   });
+  const [syncMyStatus, setSyncMyStatus] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'moderator' | 'user' | 'admin'>('all');
   const [submitted, setSubmitted] = useState(false);
 
   const setF = (k: string, v: any) => setForm((p) => ({ ...p, [k]: v }));
   
-  // Assignable: Admins can assign anyone. Moderators can assign their users and themselves.
-  const assignable = users.filter((u) => u.role === 'user' || u.role === 'moderator' || (currentUserId === u.id));
+  // Assignable pool for task assignment (not for request target):
+  // - Admin: can assign to anyone (all users + moderators)
+  // - Moderator: can only assign to themselves + their own users (role === 'user' && createdBy includes moderatorId)
+  // - Regular user: not applicable (canAssign === false)
+  const assignable = isModerator
+    ? users.filter((u) => u.id === currentUserId || (u.role === 'user'))
+    : users.filter((u) => u.role === 'user' || u.role === 'moderator' || u.id === currentUserId);
 
   const toggleAssignee = (id: string) => {
-    if (!canAssign || isRequest) return;
+    if (!canAssign || isRequest || isModeratorRequest) return;
     setForm(p => ({
       ...p,
       assigneeIds: p.assigneeIds.includes(id) ? p.assigneeIds.filter(x => x !== id) : [...p.assigneeIds, id]
@@ -69,7 +104,7 @@ function TaskModal({ task, users, allUsers, currentUserId, currentUserCreatedBy,
   };
 
   const removeAssignee = (id: string) => {
-    if (!canAssign || isRequest) return;
+    if (!canAssign || isRequest || isModeratorRequest) return;
     setForm(p => ({
       ...p,
       assigneeIds: p.assigneeIds.filter(x => x !== id)
@@ -77,14 +112,14 @@ function TaskModal({ task, users, allUsers, currentUserId, currentUserCreatedBy,
   };
 
   const selectAllVisible = () => {
-    if (!canAssign || isRequest) return;
+    if (!canAssign || isRequest || isModeratorRequest) return;
     const visibleIds = filteredAssignable.map(u => u.id);
     const newIds = Array.from(new Set([...form.assigneeIds, ...visibleIds]));
     setForm(p => ({ ...p, assigneeIds: newIds }));
   };
 
   const clearSelection = () => {
-    if (!canAssign || isRequest) return;
+    if (!canAssign || isRequest || isModeratorRequest) return;
     setForm(p => ({ ...p, assigneeIds: [] }));
   };
 
@@ -112,7 +147,7 @@ function TaskModal({ task, users, allUsers, currentUserId, currentUserCreatedBy,
   const handleSave = () => {
     setSubmitted(true);
     if (!form.title.trim() || !form.dueDate) return;
-    if (isRequest) {
+    if (isRequest || isModeratorRequest) {
       if (!selectedModerator) return;
       onSave({
         ...form,
@@ -120,11 +155,12 @@ function TaskModal({ task, users, allUsers, currentUserId, currentUserCreatedBy,
         isRequest: true,
         assigneeIds: [currentUserId],
         assignedById: selectedModerator,
+        syncMyStatus,
       });
       return;
     }
     if (form.assigneeIds.length === 0) return;
-    onSave(form);
+    onSave({ ...form, syncMyStatus });
   };
 
   const selectedUsers = users.filter(u => form.assigneeIds.includes(u.id));
@@ -151,10 +187,12 @@ function TaskModal({ task, users, allUsers, currentUserId, currentUserCreatedBy,
             </div>
             <div>
               <h3 className="modal-title" style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
-                {isRequest ? 'Request Task from Moderator' : isClone ? 'Delegate Task' : task ? 'Edit Task' : 'Create Task'}
+                {isModeratorRequest ? 'Request Task from Admin' : isRequest ? 'Request Task from Moderator' : isClone ? 'Delegate Task' : task ? 'Edit Task' : 'Create Task'}
               </h3>
               <p style={{ margin: '2px 0 0 0', fontSize: 13, color: 'var(--neutral-400)' }}>
-                {isRequest
+                {isModeratorRequest
+                  ? 'Submit a task proposal to an admin for review and approval.'
+                  : isRequest
                   ? 'Submit a task proposal for your moderator to review, schedule, and assign.'
                   : isClone
                   ? 'Assign a copy of this task to team members with updated scope'
@@ -202,10 +240,12 @@ function TaskModal({ task, users, allUsers, currentUserId, currentUserCreatedBy,
           </div>
 
           {/* Assign To Section or Moderator Request Selection */}
-          {isRequest ? (
+          {(isRequest || isModeratorRequest) ? (
             <div className="field" style={{ marginBottom: 20 }}>
               <label className="label">
-                Select Moderator to Request From <span style={{ color: 'var(--error, #ef4444)' }}>*</span>
+                {isModeratorRequest
+                  ? <>Select Admin to Request From <span style={{ color: 'var(--error, #ef4444)' }}>*</span></>
+                  : <>Select Moderator to Request From <span style={{ color: 'var(--error, #ef4444)' }}>*</span></>}
               </label>
               <select
                 className="select"
@@ -213,7 +253,7 @@ function TaskModal({ task, users, allUsers, currentUserId, currentUserCreatedBy,
                 onChange={(e) => setSelectedModerator(e.target.value)}
               >
                 {moderators.length === 0 ? (
-                  <option value="">No moderators available</option>
+                  <option value="">{isModeratorRequest ? 'No admins available' : 'No moderators available'}</option>
                 ) : (
                   moderators.map((m) => (
                     <option key={m.id} value={m.id}>
@@ -223,7 +263,9 @@ function TaskModal({ task, users, allUsers, currentUserId, currentUserCreatedBy,
                 )}
               </select>
               <div style={{ fontSize: 12, color: 'var(--neutral-400)', marginTop: 6 }}>
-                Your task request will be delivered to this moderator for review. Once approved, it will be scheduled into your deliverables.
+                {isModeratorRequest
+                  ? 'Your task request will be sent to the admin for review and approval.'
+                  : 'Your task request will be delivered to this moderator for review. Once approved, it will be scheduled into your deliverables.'}
               </div>
             </div>
           ) : (
@@ -472,14 +514,50 @@ function TaskModal({ task, users, allUsers, currentUserId, currentUserCreatedBy,
               </div>
             )}
           </div>
+
+          {/* Busyness / Availability & Status Sync */}
+          <div style={{ marginTop: 14, padding: '12px 14px', background: 'var(--neutral-50)', borderRadius: 'var(--radius-md)', border: '1px solid var(--neutral-200)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
+              <label className="label" style={{ margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>Show As / Busyness</span>
+                  <span className={`status-dot status-dot-${form.busyness || 'busy'}`} />
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--neutral-400)', fontWeight: 400 }}>Calendar & deliverable availability</span>
+              </label>
+
+              <select
+                className="select"
+                value={form.busyness}
+                onChange={(e) => setF('busyness', e.target.value)}
+                style={{ fontSize: 13, background: 'var(--surface)' }}
+              >
+                {USER_STATUS_OPTIONS.map((opt) => (
+                  <option key={opt.key} value={opt.key}>
+                    {opt.label} — {opt.description}
+                  </option>
+                ))}
+              </select>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--neutral-700)', cursor: 'pointer', marginTop: 4 }}>
+                <input
+                  type="checkbox"
+                  checked={syncMyStatus}
+                  onChange={(e) => setSyncMyStatus(e.target.checked)}
+                  style={{ width: 15, height: 15, accentColor: 'var(--brand-600)', cursor: 'pointer' }}
+                />
+                <span>Also change my current status to <strong>{getStatusOption(form.busyness).label}</strong></span>
+              </label>
+            </div>
+          </div>
         </div>
 
         {/* Modal Footer */}
         <div className="modal-footer" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontSize: 13, color: 'var(--neutral-400)' }}>
-            {isRequest ? (
+            {(isRequest || isModeratorRequest) ? (
               <span>
-                Requesting from <strong style={{ color: 'var(--neutral-700)' }}>{moderators.find(m => m.id === selectedModerator)?.fullName || 'Moderator'}</strong>
+                Requesting from <strong style={{ color: 'var(--neutral-700)' }}>{moderators.find(m => m.id === selectedModerator)?.fullName || (isModeratorRequest ? 'Admin' : 'Moderator')}</strong>
               </span>
             ) : form.assigneeIds.length > 0 ? (
               <span>
@@ -495,7 +573,7 @@ function TaskModal({ task, users, allUsers, currentUserId, currentUserCreatedBy,
               Cancel
             </button>
             <button className="btn btn-brand" onClick={handleSave} type="button">
-              {isRequest ? (
+              {(isRequest || isModeratorRequest) ? (
                 <>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                   Submit Request
@@ -713,7 +791,7 @@ import { ConfirmModal } from '../../components/ConfirmModal';
 
 // ── Main Page ──────────────────────────────────────────────────────────────
 export default function TasksPage() {
-  const { currentUser } = useAuth();
+  const { currentUser, updateStatus } = useAuth();
   const { toasts, push } = useToast();
   const [tasks, setTasks]   = useState<Task[]>([]);
   const [users, setUsers]   = useState<SafeUser[]>([]);
@@ -723,7 +801,7 @@ export default function TasksPage() {
   const [filterPriority, setFilterPriority] = useState<TaskPriority | 'all'>('all');
   const [view, setView]     = useState<'grid' | 'list'>('grid');
   const [modalState, setModalState] = useState<
-    | { type: 'create' } | { type: 'request' } | { type: 'edit'; task: Task } | { type: 'clone'; task: Task }
+    | { type: 'create' } | { type: 'request' } | { type: 'moderator-request' } | { type: 'edit'; task: Task } | { type: 'clone'; task: Task }
     | { type: 'detail'; task: Task } | { type: 'status'; task: Task } | null
   >(null);
 
@@ -758,8 +836,10 @@ export default function TasksPage() {
         const targetUsers = currentUser.role === 'admin'
           ? data
           : currentUser.role === 'moderator'
+          // Moderator sees only themselves + their assigned users (role===user && createdBy includes moderator's id)
           ? data.filter((u: SafeUser) => u.id === currentUser.id || (u.role === 'user' && u.createdBy?.includes(currentUser.id)))
-          : data;
+          // Regular user sees only themselves (can't assign to others)
+          : data.filter((u: SafeUser) => u.id === currentUser.id);
         setUsers((prev) => (JSON.stringify(prev) === JSON.stringify(targetUsers) ? prev : targetUsers));
       })
       .catch(() => {});
@@ -786,13 +866,14 @@ export default function TasksPage() {
   async function handleSave(form: any) {
     const isEdit = modalState?.type === 'edit';
     const taskId = isEdit ? (modalState as any).task.id : undefined;
-    const isRequest = form.isRequest || modalState?.type === 'request';
+    const isRequest = form.isRequest || modalState?.type === 'request' || modalState?.type === 'moderator-request';
     const body = {
       title: form.title,
       description: form.description,
       assigneeIds: form.assigneeIds,
       priority: form.priority,
       status: form.status,
+      busyness: form.busyness,
       dueDate: new Date(form.dueDate).toISOString(),
       isRequest,
       userId: currentUser!.id,
@@ -802,6 +883,9 @@ export default function TasksPage() {
       ? await fetch(`/api/tasks/${taskId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       : await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (res.ok) {
+      if (form.syncMyStatus && form.busyness) {
+        updateStatus(form.busyness);
+      }
       push('success', isEdit ? 'Task updated' : isRequest ? 'Task request sent to moderator!' : 'Task created');
       loadTasks();
       setModalState(null);
@@ -860,7 +944,8 @@ export default function TasksPage() {
           <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--neutral-900)' }}>{currentUser.role === 'user' ? 'My Tasks' : 'Task Management'}</h2>
           <p className="text-sm text-neutral" style={{ marginTop: 2 }}>{filtered.length} task{filtered.length !== 1 ? 's' : ''} found</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <UserStatusPicker />
           <div className="view-toggle-group" style={{ display: 'flex', border: '1.5px solid var(--neutral-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
             {(['grid', 'list'] as const).map((v) => (
               <button
@@ -877,10 +962,19 @@ export default function TasksPage() {
             ))}
           </div>
           {canAssign ? (
-            <button id="create-task-btn" className="btn btn-brand" onClick={() => setModalState({ type: 'create' })}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Assign Task
-            </button>
+            <>
+              {/* Moderators can also request tasks from admins */}
+              {currentUser.role === 'moderator' && (
+                <button id="request-admin-task-btn" className="btn btn-outline" onClick={() => setModalState({ type: 'moderator-request' })}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                  Request from Admin
+                </button>
+              )}
+              <button id="create-task-btn" className="btn btn-brand" onClick={() => setModalState({ type: 'create' })}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Assign Task
+              </button>
+            </>
           ) : (
             <button id="request-task-btn" className="btn btn-brand" onClick={() => setModalState({ type: 'request' })}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -951,6 +1045,12 @@ export default function TasksPage() {
 
             {/* All Task Details as Icons */}
             <div className="mobile-details-icon-bar">
+              {/* Busyness / Show As Chip */}
+              <span className="icon-chip" title={`Show as: ${getStatusOption(task.busyness).label}`}>
+                <span className={`status-dot status-dot-${task.busyness || 'busy'}`} style={{ width: 7, height: 7 }} />
+                {getStatusOption(task.busyness).label}
+              </span>
+
               {/* Priority Icon Chip */}
               {task.priority === 'critical' && (
                 <span className="icon-chip priority-chip-critical" title="Critical Priority">
@@ -1081,7 +1181,13 @@ export default function TasksPage() {
                             </td>
                             {canAssign && <td>{getUserName(task.assignedById)}</td>}
                             <td><span className={`badge badge-${task.priority}`}>{task.priority}</span></td>
-                            <td><span className={`badge badge-${task.status}`}>{task.status.replace('-', ' ')}</span></td>
+                            <td>
+                              <span className={`badge badge-${task.status}`}>{task.status.replace('-', ' ')}</span>
+                              <div style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--neutral-500)' }}>
+                                <span className={`status-dot status-dot-${task.busyness || 'busy'}`} style={{ width: 6, height: 6 }} />
+                                {getStatusOption(task.busyness).label}
+                              </div>
+                            </td>
                             <td style={{ fontSize: 13, color: 'var(--neutral-500)' }}>{new Date(task.dueDate).toLocaleDateString()}</td>
                             <td>
                               <div style={{ display: 'flex', gap: 6 }}>
@@ -1123,16 +1229,18 @@ export default function TasksPage() {
       })()}
 
       {/* Modals */}
-      {(modalState?.type === 'create' || modalState?.type === 'request' || modalState?.type === 'edit' || modalState?.type === 'clone') && (
+      {(modalState?.type === 'create' || modalState?.type === 'request' || modalState?.type === 'moderator-request' || modalState?.type === 'edit' || modalState?.type === 'clone') && (
         <TaskModal
           task={(modalState.type === 'edit' || modalState.type === 'clone') ? modalState.task : null}
           users={users}
           allUsers={allUsers}
           currentUserId={currentUser.id}
+          currentUserRole={currentUser.role}
           currentUserCreatedBy={currentUser.createdBy}
           canAssign={canAssign}
           isClone={modalState.type === 'clone'}
           isRequest={modalState.type === 'request'}
+          isModeratorRequest={modalState.type === 'moderator-request'}
           onClose={() => setModalState(null)}
           onSave={handleSave}
         />

@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const data = await req.json();
-    let { title, description, assigneeIds, assignedById, priority, status, dueDate, isRequest } = data;
+    let { title, description, assigneeIds, assignedById, priority, status, busyness, dueDate, isRequest } = data;
 
     if (!title || !dueDate) {
       return NextResponse.json({ error: 'Missing required fields: title and dueDate' }, { status: 400 });
@@ -158,6 +158,7 @@ export async function POST(req: NextRequest) {
         assignedById,
         priority: priority ?? 'medium',
         status,
+        busyness: busyness ?? 'busy',
         dueDate,
         createdAt: now,
         updatedAt: now,

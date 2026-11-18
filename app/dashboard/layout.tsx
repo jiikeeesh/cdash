@@ -52,6 +52,16 @@ const navItems: NavItem[] = [
     ),
   },
   {
+    href: '/dashboard/messages',
+    label: 'Messages',
+    roles: ['admin', 'moderator', 'user'],
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+    ),
+  },
+  {
     href: '/dashboard/users',
     label: 'Users',
     roles: ['admin', 'moderator'],
@@ -101,7 +111,7 @@ function roleBadgeClass(role: Role) {
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { currentUser, logout, loading } = useAuth();
+  const { currentUser, logout, loading, updateStatus } = useAuth();
   const { mode, toggleMode, themeColor, setThemeColor, setIsThemeModalOpen, applyUserTheme } = useTheme();
   const { unreadCount, setIsDrawerOpen } = useNotifications();
   const router = useRouter();
@@ -123,15 +133,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [isStatusMenuOpen, setIsStatusMenuOpen] = useState(false);
   const statusMenuRef = useRef<HTMLDivElement>(null);
 
-  // Restore saved status on client mount
+  // Restore saved status on client mount and sync with currentUser.status
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (currentUser?.status && STATUS_OPTIONS.some((s) => s.id === currentUser.status)) {
+      setUserStatusState(currentUser.status as UserPresenceStatus);
+    } else if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('cdash_user_status') as UserPresenceStatus | null;
       if (saved && STATUS_OPTIONS.some((s) => s.id === saved)) {
         setUserStatusState(saved);
       }
     }
-  }, []);
+  }, [currentUser?.status]);
 
   // Close status dropdown on outside click
   useEffect(() => {
@@ -154,6 +166,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       localStorage.setItem('cdash_user_status', newStatus);
     }
     if (currentUser) {
+      updateStatus(newStatus);
       try {
         await fetch('/api/presence', {
           method: 'POST',
@@ -776,6 +789,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <line x1="16" y1="2" x2="16" y2="6"/>
                 <line x1="8" y1="2" x2="8" y2="6"/>
                 <line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+            )}
+          </Link>
+
+          {/* Messages */}
+          <Link 
+            href="/dashboard/messages" 
+            className={`insta-nav-tab${pathname.startsWith('/dashboard/messages') ? ' active' : ''}`}
+            aria-label="Messages"
+          >
+            {pathname.startsWith('/dashboard/messages') ? (
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/>
+              </svg>
+            ) : (
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
               </svg>
             )}
           </Link>

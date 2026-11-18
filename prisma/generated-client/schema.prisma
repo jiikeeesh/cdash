@@ -1,0 +1,95 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated-client"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id                  String  @id @default(cuid())
+  username            String  @unique
+  password            String
+  role                String  @default("user") // admin | moderator | user
+  fullName            String
+  email               String  @unique
+  phone               String  @default("")
+  address             String  @default("")
+  department          String  @default("")
+  isFirstLogin        Boolean @default(true)
+  createdAt           String
+  createdBy           String  @default("system")
+  themeMode           String  @default("light")
+  themeColor          String  @default("indigo")
+  publicKey           String? @default("")
+  encryptedPrivateKey String? @default("")
+
+  // Relations
+  assignedTasks    Task[]           @relation("TaskAssignees")
+  createdTasks     Task[]           @relation("AssignedBy")
+  accountRequests  AccountRequest[] @relation("RequestedBy")
+  resolvedRequests AccountRequest[] @relation("ResolvedBy")
+  sentMessages     Message[]        @relation("SentMessages")
+  receivedMessages Message[]        @relation("ReceivedMessages")
+}
+
+model Message {
+  id                 String  @id @default(cuid())
+  senderId           String
+  receiverId         String
+  ciphertext         String
+  iv                 String
+  createdAt          String
+  updatedAt          String?
+  isEdited           Boolean @default(false)
+  deletedForSender   Boolean @default(false)
+  deletedForReceiver Boolean @default(false)
+  taskId             String?
+  task               Task?   @relation("LinkedTaskMessages", fields: [taskId], references: [id], onDelete: SetNull)
+  read               Boolean @default(false)
+
+  sender   User @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([senderId, receiverId])
+  @@index([receiverId])
+  @@index([taskId])
+}
+
+model Task {
+  id           String @id @default(cuid())
+  title        String
+  description  String @default("")
+  assignedById String
+  status       String @default("pending") // pending | in-progress | review | done
+  priority     String @default("medium") // low | medium | high | critical
+  dueDate      String
+  createdAt    String
+  updatedAt    String
+  notes        String @default("[]") // JSON array stored as string
+
+  assignees      User[]    @relation("TaskAssignees")
+  assignedBy     User      @relation("AssignedBy", fields: [assignedById], references: [id], onDelete: Cascade)
+  linkedMessages Message[] @relation("LinkedTaskMessages")
+}
+
+model AccountRequest {
+  id              String  @id @default(cuid())
+  requestedById   String
+  requestedRole   String  @default("user")
+  fullName        String
+  email           String
+  department      String  @default("")
+  reason          String
+  status          String  @default("pending") // pending | approved | rejected
+  createdAt       String
+  resolvedAt      String?
+  resolvedById    String?
+  rejectionReason String?
+
+  requestedBy User  @relation("RequestedBy", fields: [requestedById], references: [id], onDelete: Cascade)
+  resolvedBy  User? @relation("ResolvedBy", fields: [resolvedById], references: [id])
+}

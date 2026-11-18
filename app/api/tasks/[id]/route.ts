@@ -11,7 +11,7 @@ export async function PATCH(
   try {
     const { id } = await params;
     const data = await req.json();
-    const { title, description, assigneeIds, priority, status, dueDate, notes, userId } = data;
+    const { title, description, assigneeIds, priority, status, busyness, dueDate, notes, userId } = data;
 
     // Check existing task for permission checks
     const existing = await prisma.task.findUnique({
@@ -67,6 +67,7 @@ export async function PATCH(
     if (description !== undefined)  updateData.description  = description;
     if (priority !== undefined)     updateData.priority     = priority;
     if (status !== undefined)       updateData.status       = status;
+    if (busyness !== undefined)     updateData.busyness     = busyness;
     if (dueDate !== undefined)      updateData.dueDate      = dueDate;
     if (notes !== undefined)        updateData.notes        = JSON.stringify(notes);
     if (assigneeIds !== undefined && Array.isArray(assigneeIds)) {
